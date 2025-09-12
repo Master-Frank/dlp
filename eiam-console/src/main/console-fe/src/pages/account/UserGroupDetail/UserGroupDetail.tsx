@@ -1,0 +1,208 @@
+/*
+ * eiam-console - Employee Identity and Access Management
+ * Copyright © 2005-Present Charles Co., Ltd.
+ */
+import { getUserGroup, removeUserGroup, updateUserGroup } from '@/services/account';
+import { history } from '@@/core/history';
+
+import { PageContainer, ProDescriptions, RouteContext } from '@ant-design/pro-components';
+import { useAsyncEffect, useMount } from 'ahooks';
+import { App, Button, Skeleton } from 'antd';
+import React, { useState } from 'react';
+import MemberList from './components/MemberList';
+import { UserGroupDetailTabs } from './constant';
+import queryString from 'query-string';
+import { useIntl, useLocation } from '@umijs/max';
+import useStyles from './style';
+import AccessStrategy from './components/AccessStrategy';
+import { ExclamationCircleFilled } from '@ant-design/icons';
+
+/**
+ * 用户组详情
+ */
+export default () => {
+  const intl = useIntl();
+  const { styles } = useStyles();
+  const { message, modal } = App.useApp();
+  const location = useLocation();
+  const query = queryString.parse(location.search);
+  const { id } = query as { id: string };
+  const { type } = query as {
+    type: UserGroupDetailTabs;
+  };
+
+  const [detail, setDetail] = useState<AccountAPI.GetUserGroup | Record<string, string>>();
+  const [tabActiveKey, setTabActiveKey] = useState<string>();
+  const [loading, setLoading] = useState<boolean>(false);
+
+  const goUserGroupList = () => {
+    history.push('/account/user-group');
+  };
+
+  useMount(() => {
+    if (!id) {
+      message
+        .warning(intl.formatMessage({ id: 'pages.account.user_group_detail.use_mount.message' }))
+        .then();
+      goUserGroupList();
+      return;
+    }
+    if (!type || !UserGroupDetailTabs[type]) {
+      setTabActiveKey(UserGroupDetailTabs.member);
+      history.push({
+        pathname: location.pathname,
+        search: queryString.stringify({ type: UserGroupDetailTabs.member, id: id }),
+      });
+      return;
+    }
+    setTabActiveKey(type);
+  });
+
+  useAsyncEffect(async () => {
+    if (id) {
+      setLoading(true);
+      const { success, result } = await getUserGroup(id);
+      if (success) {
+        setDetail(result);
+        setLoading(false);
+        return;
+      }
+    }
+  }, [id]);
+
+  const description = (
+    <RouteContext.Consumer>
+      {({ isMobile }) =>
+        loading ? (
+          <Skeleton active paragraph={{ rows: 1 }} />
+        ) : (
+          <ProDescriptions<Record<string, string>>
+            size="small"
+            column={isMobile ? 1 : 2}
+            //只有具有修改权限才可以修改该信息
+            editable={{
+              onSave: async (_key, record) => {
+                let success: boolean;
+                const result = await updateUserGroup({ ...record });
+                success = result.success;
+                if (success) {
+                  message.success(intl.formatMessage({ id: 'app.operation_success' }));
+                  setDetail({ ...record });
+                  return Promise.resolve(true);
+                }
+                return Promise.resolve(false);
+              },
+            }}
+            dataSource={{ ...detail }}
+          >
+            <ProDescriptions.Item
+              dataIndex="name"
+              label={intl.formatMessage({
+                id: 'pages.account.user_group_detail.descriptions.name',
+              })}
+              fieldProps={{
+                maxLength: 8,
+              }}
+            />
+            <ProDescriptions.Item
+              label={intl.formatMessage({
+                id: 'pages.account.user_group_detail.descriptions.remark',
+              })}
+              className={styles.descriptionRemark}
+              dataIndex="remark"
+              valueType={'textarea'}
+              fieldProps={{ rows: 2, maxLength: 20 }}
+            />
+            <ProDescriptions.Item
+              dataIndex="code"
+              label={intl.formatMessage({
+                id: 'pages.account.user_group_detail.descriptions.code',
+              })}
+              copyable
+              editable={false}
+            />
+            <ProDescriptions.Item
+              dataIndex="createTime"
+              editable={false}
+              label={intl.formatMessage({
+                id: 'pages.account.user_group_detail.descriptions.create_time',
+              })}
+            />
+          </ProDescriptions>
+        )
+      }
+    </RouteContext.Consumer>
+  );
+
+  return (
+    <PageContainer
+      onBack={() => {
+        goUserGroupList();
+      }}
+      title={
+        loading ? <Skeleton.Input style={{ width: 50 }} active size={'small'} /> : detail?.name
+      }
+      content={<>{description}</>}
+      tabList={[
+        {
+          key: UserGroupDetailTabs.member,
+          tab: intl.formatMessage({ id: 'pages.account.user_group_detail.tab_list.member' }),
+        },
+        {
+          key: UserGroupDetailTabs.app_access,
+          tab: intl.formatMessage({
+            id: 'pages.account.user_group_detail.tab_list.app_access',
+          }),
+        },
+      ]}
+      extra={[
+        <Button
+          key="delete"
+          type="primary"
+          danger
+          onClick={() => {
+            const confirmed = modal.error({
+              centered: true,
+              title: intl.formatMessage({
+                id: 'pages.account.user_group_detail.extra.delete.confirm_title',
+              }),
+              icon: <ExclamationCircleFilled />,
+              content: intl.formatMessage({
+                id: 'pages.account.user_group_detail.extra.delete.confirm_content',
+              }),
+              okText: intl.formatMessage({ id: 'app.confirm' }),
+              okType: 'danger',
+              okCancel: true,
+              cancelText: intl.formatMessage({ id: 'app.cancel' }),
+              onOk: async () => {
+                const { success } = await removeUserGroup(id).catch(({ response: { data } }) => {
+                  return data;
+                });
+                if (success) {
+                  message.success(intl.formatMessage({ id: 'app.operation_success' }));
+                  confirmed.destroy();
+                  goUserGroupList();
+                }
+              },
+            });
+          }}
+        >
+          {intl.formatMessage({ id: 'pages.account.user_group_detail.extra.delete' })}
+        </Button>,
+      ]}
+      tabActiveKey={tabActiveKey}
+      onTabChange={(key: string) => {
+        setTabActiveKey(key);
+        history.replace({
+          pathname: location.pathname,
+          search: queryString.stringify({ id, type: key }),
+        });
+      }}
+    >
+      {/*成员信息*/}
+      {type === UserGroupDetailTabs.member && <MemberList id={id} />}
+      {/*授权应用*/}
+      {type === UserGroupDetailTabs.app_access && <AccessStrategy userGroupId={id} />}
+    </PageContainer>
+  );
+};

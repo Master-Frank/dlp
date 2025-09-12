@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    eiam-application-all - Employee Identity and Access Management
+    Copyright © 2022-Present Charles Network Technology Co., Ltd.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>cn.topiam</groupId>
+        <artifactId>eiam-application</artifactId>
+        <version>1.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <packaging>jar</packaging>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>eiam-application-all</artifactId>
+
+    <dependencies>
+        <!-- form-->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-application-form</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- jwt-->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-application-jwt</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- oidc-->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-application-oidc</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

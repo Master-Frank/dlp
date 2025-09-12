@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    eiam-authentication - Employee Identity and Access Management
+    Copyright © 2022-Present Charles Network Technology Co., Ltd.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>cn.topiam</groupId>
+        <artifactId>dlp</artifactId>
+        <version>1.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>eiam-authentication</artifactId>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>eiam-authentication-core</module>
+        <module>eiam-authentication-dingtalk</module>
+        <module>eiam-authentication-feishu</module>
+        <module>eiam-authentication-qq</module>
+        <module>eiam-authentication-wechat</module>
+        <module>eiam-authentication-wechatwork</module>
+        <module>eiam-authentication-all</module>
+        <module>eiam-authentication-mail</module>
+        <module>eiam-authentication-sms</module>
+        <module>eiam-authentication-github</module>
+        <module>eiam-authentication-gitee</module>
+        <module>eiam-authentication-alipay</module>
+    </modules>
+
+    <dependencies>
+        <!-- core -->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

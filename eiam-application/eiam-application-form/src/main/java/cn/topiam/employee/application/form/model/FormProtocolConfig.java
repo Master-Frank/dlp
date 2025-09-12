@@ -1,0 +1,88 @@
+/*
+ * eiam-application-form - Employee Identity and Access Management
+ * Copyright © 2022-Present Charles Network Technology Co., Ltd.
+ */
+package cn.topiam.employee.application.form.model;
+
+import java.io.Serial;
+import java.util.List;
+
+import org.springframework.util.CollectionUtils;
+
+import cn.topiam.employee.application.AbstractProtocolConfig;
+import cn.topiam.employee.common.entity.app.AppFormConfigEntity;
+import cn.topiam.employee.common.enums.app.FormEncryptType;
+import cn.topiam.employee.common.enums.app.FormSubmitType;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.experimental.SuperBuilder;
+
+/**
+ * Form 协议配置
+ *
+ * @author TopIAM
+ * Created by support@topiam.cn on 2022/8/28 21:43
+ */
+@EqualsAndHashCode(callSuper = true)
+@Data
+@SuperBuilder
+public class FormProtocolConfig extends AbstractProtocolConfig {
+
+    @Serial
+    private static final long                    serialVersionUID = -3671812647788723766L;
+
+    /**
+     * 登录URL
+     */
+    private String                               loginUrl;
+
+    /**
+     * 登录名属性名称
+     */
+    private String                               usernameField;
+
+    /**
+     * 登录密码属性名称
+     */
+    private String                               passwordField;
+
+    /**
+     * 用户名加密类型
+     */
+    private FormEncryptType                      usernameEncryptType;
+
+    /**
+     * 用户名加密秘钥
+     */
+    private String                               usernameEncryptKey;
+
+    /**
+     * 登录密码加密类型
+     */
+    private FormEncryptType                      passwordEncryptType;
+
+    /**
+     * 登录密码加密秘钥
+     */
+    private String                               passwordEncryptKey;
+
+    /**
+     * 登录提交方式
+     */
+    private FormSubmitType                       submitType;
+
+    /**
+     * 登录其他信息
+     */
+    private List<AppFormConfigEntity.OtherField> otherField;
+
+    /**
+     * 是否配置
+     */
+    private Boolean                              configured;
+
+    public List<AppFormConfigEntity.OtherField> getOtherField() {
+        return CollectionUtils.isEmpty(otherField) ? List.of() : otherField;
+    }
+}

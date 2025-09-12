@@ -1,0 +1,126 @@
+/*
+ * eiam-common - Employee Identity and Access Management
+ * Copyright © 2022-Present Charles Network Technology Co., Ltd.
+ */
+package cn.topiam.employee.common.enums;
+
+import com.fasterxml.jackson.annotation.JsonValue;
+
+import cn.topiam.employee.support.enums.BaseEnum;
+import cn.topiam.employee.support.web.converter.EnumConvert;
+
+import lombok.Getter;
+
+/**
+ * 短信类型
+ *
+ * @author TopIAM
+ * Created by support@topiam.cn on 2021/9/25 21:19
+ */
+public enum SmsType implements BaseEnum {
+                                         /**
+                                          * 绑定手机号
+                                          */
+                                         BIND_PHONE("bind_phone", "绑定手机号", MessageCategory.CODE),
+                                         /**
+                                           * 绑定，修改手机号成功
+                                           */
+                                         BIND_PHONE_SUCCESS("bind_phone_success", "绑定手机号成功",
+                                                            MessageCategory.CODE),
+                                         /**
+                                          * 修改绑定手机号
+                                          */
+                                         UPDATE_PHONE("update_phone", "修改手机号",
+                                                      MessageCategory.CODE),
+                                         /**
+                                          * 忘记密码
+                                          */
+                                         FORGET_PASSWORD("forget_password", "忘记密码",
+                                                         MessageCategory.CODE),
+                                         /**
+                                          * 修改密码
+                                          */
+                                         UPDATE_PASSWORD("update_password", "修改密码",
+                                                         MessageCategory.CODE),
+                                         /**
+                                          * 重置密码
+                                          */
+                                         RESET_PASSWORD("reset_password", "重置密码",
+                                                        MessageCategory.NOTICE),
+                                         /**
+                                          * 重置密码成功
+                                          */
+                                         RESET_PASSWORD_SUCCESS("reset_password_success", "重置密码成功",
+                                                                MessageCategory.NOTICE),
+                                         /**
+                                          * 登录验证
+                                          */
+                                         LOGIN("login", "登录验证", MessageCategory.CODE),
+
+                                         /**
+                                          * 欢迎短信
+                                          */
+                                         WELCOME_SMS("welcome_sms", "欢迎短信", MessageCategory.NOTICE),
+
+                                         /**
+                                          * 密码过期提醒
+                                          */
+                                         PASSWORD_SOON_EXPIRED_REMIND("password_soon_expired_remind",
+                                                                      "密码过期提醒",
+                                                                      MessageCategory.NOTICE);
+
+    /**
+     * code
+     */
+    @JsonValue
+    private final String          code;
+    /**
+     * desc
+     */
+    private final String          desc;
+
+    /**
+     * 短信类型
+     */
+    @Getter
+    private final MessageCategory category;
+
+    SmsType(String code, String desc, MessageCategory category) {
+        this.code = code;
+        this.desc = desc;
+        this.category = category;
+    }
+
+    @Override
+    public String getCode() {
+        return code;
+    }
+
+    @Override
+    public String getDesc() {
+        return desc;
+    }
+
+    /**
+     * 获取类型
+     *
+     * @param code {@link String}
+     * @return {@link SmsType}
+     */
+    @EnumConvert
+    public static SmsType getType(String code) {
+        SmsType[] values = values();
+        for (SmsType status : values) {
+            if (String.valueOf(status.getCode()).equals(code)) {
+                return status;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public String toString() {
+        return this.code;
+    }
+
+}

@@ -1,0 +1,256 @@
+/*
+ * eiam-console - Employee Identity and Access Management
+ * Copyright © 2005-Present Charles Co., Ltd.
+ */
+import { history } from '@@/core/history';
+import {
+  ActionType,
+  ModalForm,
+  PageContainer,
+  ProCard,
+  ProFormSelect,
+  ProFormText,
+  ProFormTextArea,
+  ProList,
+  QueryFilter,
+} from '@ant-design/pro-components';
+
+import { useAsyncEffect } from 'ahooks';
+import { App, Avatar, Card, Spin, Typography } from 'antd';
+import { useForm } from 'antd/es/form/Form';
+import * as React from 'react';
+import { useRef, useState } from 'react';
+import useStyle from './style';
+import { useIntl } from '@umijs/max';
+import classnames from 'classnames';
+import { ListTemplate } from './data.d';
+import { createApp, getAppTemplateList } from './service';
+import { getAllAppGroupList } from '@/services/app';
+
+const { Paragraph } = Typography;
+const prefixCls = 'topiam-create-app';
+
+/**
+ * 创建应用
+ *
+ * @constructor
+ */
+const CreateApp = (props: {
+  name: string;
+  code: string;
+  protocol: string;
+  open: boolean;
+  onCancel: (e?: React.MouseEvent<HTMLButtonElement>) => void;
+}) => {
+  const intl = useIntl();
+  const { name, code, protocol, open, onCancel } = props;
+  const [form] = useForm();
+  const [loading, setLoading] = useState<boolean>(false);
+  const { modal } = App.useApp();
+
+  useAsyncEffect(async () => {
+    if (open) {
+      form?.setFieldsValue({ name: `${name}` });
+    }
+  }, [open]);
+
+  return (
+    <ModalForm
+      title={intl.formatMessage({ id: 'pages.app.create.modal_form.title' })}
+      open={open}
+      width={500}
+      form={form}
+      scrollToFirstError
+      initialValues={{ template: code }}
+      autoFocusFirstInput
+      layout={'horizontal'}
+      labelAlign={'left'}
+      labelCol={{ span: 4 }}
+      wrapperCol={{ span: 20 }}
+      requiredMark={false}
+      preserve={false}
+      modalProps={{
+        onCancel: (e) => {
+          form.resetFields();
+          onCancel(e);
+        },
+      }}
+      onFinish={async (values: Record<string, string>) => {
+        setLoading(true);
+        const { success, result } = await createApp(values).finally(() => {
+          setLoading(false);
+        });
+        if (success && result) {
+          onCancel();
+          setTimeout(() => {
+            const successModal = modal.success({
+              title: intl.formatMessage({ id: 'app.add_success' }),
+              content: intl.formatMessage({
+                id: 'pages.app.create.modal_form.modal_success.content',
+              }),
+              okText: intl.formatMessage({
+                id: 'pages.app.create.modal_form.modal_success.ok_text',
+              }),
+              onOk: () => {
+                successModal.destroy();
+                history.push(
+                  `/app/list/detail?id=${result.id}&name=${values.name}&protocol=${protocol}`,
+                );
+              },
+            });
+          }, 300);
+        }
+      }}
+    >
+      <Spin spinning={loading}>
+        <ProFormText name={'template'} hidden />
+        <ProFormText
+          name="name"
+          preserve={false}
+          label={intl.formatMessage({ id: 'pages.app.create.modal_form.name' })}
+          placeholder={intl.formatMessage({ id: 'pages.app.create.modal_form.name.placeholder' })}
+          rules={[
+            {
+              required: true,
+              message: intl.formatMessage({ id: 'pages.app.create.modal_form.name.rule.0' }),
+            },
+          ]}
+        />
+        <ProFormSelect
+          name="groupIds"
+          mode="multiple"
+          fieldProps={{
+            maxTagCount: 'responsive',
+          }}
+          label={intl.formatMessage({ id: 'pages.app.create.modal_form.group' })}
+          request={async () => {
+            setLoading(true);
+            const { success, data } = await getAllAppGroupList({}, {}, {}).finally(() => {
+              setLoading(false);
+            });
+            if (success && data) {
+              return data.map((i) => {
+                return { label: i.name, value: i.id };
+              });
+            }
+            return [];
+          }}
+        />
+        <ProFormTextArea
+          name="remark"
+          preserve={false}
+          fieldProps={{ rows: 2, maxLength: 20, showCount: false }}
+          placeholder={intl.formatMessage({ id: 'pages.app.create.modal_form.remark.placeholder' })}
+          label={intl.formatMessage({ id: 'pages.app.create.modal_form.remark' })}
+        />
+      </Spin>
+    </ModalForm>
+  );
+};
+const AppCreate = () => {
+  const intl = useIntl();
+  const [searchParams, setSearchParams] = useState<Record<string, any>>();
+  const [createAppOpen, setCreateAppOpen] = useState<boolean>(false);
+  const [createAppTemplate, setCreateAppTemplate] = useState<ListTemplate>();
+  const actionRef = useRef<ActionType>();
+  const { styles } = useStyle(prefixCls);
+
+  return (
+    <div className={styles}>
+      <PageContainer
+        onBack={() => {
+          history.push('/app');
+        }}
+        className={classnames(`${prefixCls}`)}
+        content={
+          <>
+            <span>{intl.formatMessage({ id: 'pages.app.create.desc.0' })}</span>
+            <span>{intl.formatMessage({ id: 'pages.app.create.desc.1' })}</span>
+          </>
+        }
+      >
+        <ProCard bodyStyle={{ padding: 0 }}>
+          <QueryFilter
+            layout="horizontal"
+            onFinish={(values) => {
+              setSearchParams({ ...searchParams, ...values });
+              actionRef.current?.reset?.();
+              return Promise.resolve();
+            }}
+          >
+            <ProFormText
+              name="name"
+              label={intl.formatMessage({ id: 'pages.app.create.form_text.name' })}
+            />
+          </QueryFilter>
+        </ProCard>
+        <br />
+        <ProList<ListTemplate>
+          split
+          rowKey="code"
+          showActions="always"
+          headerTitle={intl.formatMessage({ id: 'pages.app.create.header_title' })}
+          search={false}
+          actionRef={actionRef}
+          request={getAppTemplateList}
+          pagination={{ defaultPageSize: 20, size: 'small' }}
+          grid={{
+            xs: 1,
+            sm: 2,
+            md: 2,
+            lg: 3,
+            xl: 4,
+            xxl: 5,
+          }}
+          params={{ ...searchParams }}
+          renderItem={(row) => {
+            return (
+              <Card
+                className={`${prefixCls}-item-card`}
+                style={{ margin: 8 }}
+                hoverable
+                bordered={false}
+              >
+                <div
+                  className={`${prefixCls}-item-content-wrapper`}
+                  key={row.code}
+                  onClick={() => {
+                    setCreateAppOpen(true);
+                    setCreateAppTemplate(row);
+                  }}
+                >
+                  <div className={`${prefixCls}-item-avatar`}>
+                    <Avatar key={row.icon} shape="square" src={row.icon} size={45} />
+                  </div>
+                  <div className={`${prefixCls}-item-content`}>
+                    <span className={`${prefixCls}-item-content-title`}>{row.name}</span>
+                    <Paragraph
+                      className={`${prefixCls}-item-content-desc`}
+                      ellipsis={{ tooltip: row.desc, rows: 2 }}
+                      title={row.desc}
+                    >
+                      {row.desc ? row.desc : <>&nbsp;</>}
+                    </Paragraph>
+                  </div>
+                </div>
+              </Card>
+            );
+          }}
+        />
+      </PageContainer>
+      {createAppTemplate && (
+        <CreateApp
+          code={createAppTemplate?.code}
+          name={createAppTemplate?.name}
+          protocol={createAppTemplate.protocol}
+          open={createAppOpen}
+          onCancel={() => {
+            setCreateAppOpen(false);
+            setCreateAppTemplate(undefined);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+export default AppCreate;

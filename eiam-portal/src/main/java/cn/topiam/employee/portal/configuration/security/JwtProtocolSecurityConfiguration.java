@@ -1,0 +1,118 @@
+/*
+ * eiam-portal - Employee Identity and Access Management
+ * Copyright © 2022-Present Charles Network Technology Co., Ltd.
+ */
+package cn.topiam.employee.portal.configuration.security;
+
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
+import org.springframework.boot.autoconfigure.cache.CacheProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
+import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+
+import cn.topiam.employee.application.ApplicationServiceLoader;
+import cn.topiam.employee.audit.event.AuditEventPublish;
+import cn.topiam.employee.common.repository.setting.SettingRepository;
+import cn.topiam.employee.protocol.jwt.JwtAuthorizationService;
+import cn.topiam.employee.protocol.jwt.RedisJwtAuthorizationService;
+import cn.topiam.employee.protocol.jwt.authentication.JwtAuthenticationFailureEventListener;
+import cn.topiam.employee.protocol.jwt.authentication.JwtAuthenticationSuccessEventListener;
+import cn.topiam.employee.protocol.jwt.configurers.JwtAuthorizationServerConfigurer;
+import cn.topiam.employee.support.web.useragent.UserAgentParser;
+import static org.springframework.security.config.http.SessionCreationPolicy.NEVER;
+
+import static cn.topiam.employee.common.constant.ConfigBeanNameConstants.JWT_PROTOCOL_SECURITY_FILTER_CHAIN;
+
+/**
+ *
+ * @author TopIAM
+ * Created by support@topiam.cn on 2023/7/3 21:16
+ */
+@AutoConfigureBefore(PortalSecurityConfiguration.class)
+@Configuration(proxyBeanMethods = false)
+public class JwtProtocolSecurityConfiguration extends AbstractSecurityConfiguration {
+
+    /**
+     * JwtProtocolSecurityFilterChain
+     *
+     * @param httpSecurity {@link HttpSecurity}
+     * @return {@link SecurityFilterChain}
+     * @throws Exception Exception
+     */
+    @Bean(value = JWT_PROTOCOL_SECURITY_FILTER_CHAIN)
+    @RefreshScope
+    public SecurityFilterChain jwtProtocolSecurityFilterChain(HttpSecurity httpSecurity) throws Exception {
+        //@formatter:off
+        httpSecurity.getSharedObject(AuthenticationManagerBuilder.class).parentAuthenticationManager(null);
+        //Jwt IDP 配置
+        JwtAuthorizationServerConfigurer serverConfigurer = new JwtAuthorizationServerConfigurer(userAgentParser);
+        RequestMatcher endpointsMatcher = serverConfigurer.getEndpointsMatcher();
+        httpSecurity.securityMatcher(endpointsMatcher)
+                .authorizeHttpRequests(authorizeRequests -> authorizeRequests.anyRequest().authenticated())
+                //安全上下文
+                .securityContext(securityContext())
+                //CSRF
+                .csrf(withCsrfConfigurerDefaults(endpointsMatcher))
+                //headers
+                .headers(withHeadersConfigurerDefaults())
+                //cors
+                .cors(withCorsConfigurerDefaults())
+                //会话管理器
+                .sessionManagement(configurer -> configurer.sessionCreationPolicy(NEVER))
+                .with(serverConfigurer,configurer-> {});
+        return httpSecurity.build();
+        //@formatter:on
+    }
+
+    /**
+     * JWT 成功监听
+     *
+     * @param auditEventPublish {@link AuditEventPublish}
+     * @return {@link AuthenticationSuccessEvent}
+     */
+    @Bean
+    public ApplicationListener<AuthenticationSuccessEvent> jwtAuthenticationSuccessEventListener(AuditEventPublish auditEventPublish) {
+        return new JwtAuthenticationSuccessEventListener(auditEventPublish);
+    }
+
+    /**
+     * Jwt 失败监听
+     *
+     * @param auditEventPublish {@link AuditEventPublish}
+     * @return {@link JwtAuthenticationFailureEventListener}
+     */
+    @Bean
+    public ApplicationListener<AbstractAuthenticationFailureEvent> jwtAuthenticationFailureEventListener(AuditEventPublish auditEventPublish) {
+        return new JwtAuthenticationFailureEventListener(auditEventPublish);
+    }
+
+    @Bean
+    public JwtAuthorizationService jwtAuthorizationService(RedisConnectionFactory redisConnectionFactory,
+                                                           CacheProperties cacheProperties,
+                                                           AutowireCapableBeanFactory beanFactory,
+                                                           ApplicationServiceLoader applicationServiceLoader) {
+        RedisTemplate<String, String> redisTemplate = getStringRedisTemplate(redisConnectionFactory,
+            cacheProperties);
+        return new RedisJwtAuthorizationService(redisTemplate, beanFactory,
+            applicationServiceLoader);
+    }
+
+    private final UserAgentParser userAgentParser;
+
+    public JwtProtocolSecurityConfiguration(SettingRepository settingRepository,
+                                            UserAgentParser userAgentParser) {
+        super(userAgentParser, settingRepository);
+        this.userAgentParser = userAgentParser;
+    }
+
+}

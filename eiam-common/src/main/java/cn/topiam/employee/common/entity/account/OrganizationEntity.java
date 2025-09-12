@@ -1,0 +1,133 @@
+/*
+ * eiam-common - Employee Identity and Access Management
+ * Copyright © 2022-Present Charles Network Technology Co., Ltd.
+ */
+package cn.topiam.employee.common.entity.account;
+
+import java.io.Serial;
+import java.util.Objects;
+
+import org.hibernate.Hibernate;
+import org.hibernate.annotations.SoftDelete;
+
+import cn.topiam.employee.common.enums.account.OrganizationType;
+import cn.topiam.employee.support.repository.SoftDeleteConverter;
+import cn.topiam.employee.support.repository.base.BaseEntity;
+
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import static cn.topiam.employee.support.repository.base.BaseEntity.IS_DELETED_COLUMN;
+
+/**
+ * <p>
+ * 组织架构
+ * </p>
+ *
+ * @author TopIAM Automatic generated
+ * Created by support@topiam.cn on 2020-08-09
+ */
+@Getter
+@Setter
+@ToString
+@Entity
+@Table(name = "eiam_organization")
+@SoftDelete(columnName = IS_DELETED_COLUMN, converter = SoftDeleteConverter.class)
+public class OrganizationEntity extends BaseEntity {
+
+    @Serial
+    private static final long serialVersionUID = 8143944323232082295L;
+
+    /**
+     * 组织机构名称
+     */
+    @Column(name = "name_")
+    private String            name;
+
+    /**
+     * 机构编码
+     */
+    @Column(name = "code_")
+    private String            code;
+
+    /**
+     * 类型
+     */
+    @Column(name = "type_")
+    private OrganizationType  type;
+
+    /**
+     * 上级ID
+     */
+    @Column(name = "parent_id")
+    private String            parentId;
+
+    /**
+     * 路径枚举ID
+     */
+    @Column(name = "path_")
+    private String            path;
+
+    /**
+     * 路径显示名称
+     */
+    @Column(name = "display_path")
+    private String            displayPath;
+
+    /**
+     * 外部ID
+     */
+    @Column(name = "external_id")
+    private String            externalId;
+
+    /**
+     * 数据来源
+     */
+    @Column(name = "data_origin")
+    private String            dataOrigin;
+
+    /**
+     * 身份源id
+     */
+    @Column(name = "identity_source_id")
+    private String            identitySourceId;
+
+    /**
+     * 排序
+     */
+    @Column(name = "order_")
+    private Long              order;
+
+    /**
+     * 是否叶子节点 leaf
+     */
+    @Column(name = "is_leaf")
+    private Boolean           leaf;
+
+    /**
+     * 是否启用
+     */
+    @Column(name = "is_enabled")
+    private Boolean           enabled;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || Hibernate.getClass(this) != Hibernate.getClass(o)) {
+            return false;
+        }
+        OrganizationEntity entity = (OrganizationEntity) o;
+        return getId() != null && Objects.equals(getId(), entity.getId());
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+}

@@ -1,0 +1,276 @@
+/*
+ * eiam-console - Employee Identity and Access Management
+ * Copyright © 2005-Present Charles Co., Ltd.
+ */
+import {
+  createIdentitySource,
+  disableIdentitySource,
+  enableIdentitySource,
+  getIdentityProviderList,
+} from './service';
+import { history } from '@@/core/history';
+import { PlusOutlined } from '@ant-design/icons';
+import type { ActionType } from '@ant-design/pro-components';
+import { PageContainer, ProList } from '@ant-design/pro-components';
+import { App, Avatar, Button, Tag } from 'antd';
+import { Fragment, useRef, useState } from 'react';
+import CreateModal from './components/CreateModal';
+import useStyle from './style';
+import classnames from 'classnames';
+import { ICON_LIST } from '@/components/IconFont/constant';
+import { useIntl } from '@umijs/max';
+import { deleteIdentitySource } from '@/services/account';
+
+const prefixCls = 'identity-source-list';
+
+/**
+ * onDetailClick
+ * @param id
+ * @param provider
+ */
+const onDetailClick = (id: string, provider: string) => {
+  history.push(`/account/identity-source/detail?id=${id}&type=config&provider=${provider}`);
+};
+/**
+ * 身份源列表
+ */
+export default () => {
+  const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
+  const actionRef = useRef<ActionType>();
+  const intl = useIntl();
+  const { message, modal } = App.useApp();
+  const { styles } = useStyle(prefixCls);
+  const ListContent = (data: AccountAPI.ListIdentitySource) => (
+    <div className={classnames(`${prefixCls}-content`)}>
+      <div className={classnames(`${prefixCls}-item-content`)}>
+        {data.enabled ? (
+          <Tag color="#5BD8A6">{intl.formatMessage({ id: 'app.enabled' })}</Tag>
+        ) : (
+          <Tag color="#e54545">{intl.formatMessage({ id: 'app.not_enabled' })}</Tag>
+        )}
+      </div>
+    </div>
+  );
+  return (
+    <div className={styles.main}>
+      <PageContainer
+        content={intl.formatMessage({ id: 'pages.account.identity_source_list.desc' })}
+        className={`${prefixCls}`}
+      >
+        <ProList<AccountAPI.ListIdentitySource>
+          toolBarRender={() => [
+            <Button
+              key="add"
+              type="primary"
+              onClick={() => {
+                setCreateModalVisible(true);
+              }}
+            >
+              <PlusOutlined />
+              {intl.formatMessage({
+                id: 'pages.account.identity_source_list.tool_bar_render.button.add',
+              })}
+            </Button>,
+          ]}
+          search={{}}
+          rowKey="id"
+          headerTitle={intl.formatMessage({ id: 'pages.account.identity_source_list' })}
+          actionRef={actionRef}
+          split
+          pagination={{ showQuickJumper: false, defaultPageSize: 5, size: 'small' }}
+          showActions="always"
+          request={getIdentityProviderList}
+          form={{
+            // 由于配置了 transform，提交的参与与定义的不同这里需要转化一下
+            syncToUrl: (values, type) => {
+              if (type === 'get') {
+                return {
+                  ...values,
+                };
+              }
+              return values;
+            },
+          }}
+          metas={{
+            title: {
+              title: intl.formatMessage({ id: 'pages.account.identity_source_list.metas.title' }),
+              dataIndex: 'name',
+              render: (_, row) => {
+                return (
+                  <span
+                    onClick={() => {
+                      onDetailClick(row.id, row.provider);
+                    }}
+                  >
+                    {row.name}
+                  </span>
+                );
+              },
+            },
+            avatar: {
+              search: false,
+              render: (_text, row) => {
+                return (
+                  <Avatar key={row.id} shape="square" size={50} src={ICON_LIST[row.provider]} />
+                );
+              },
+            },
+            description: {
+              search: false,
+              render: (_, row) => {
+                return row.remark ? <span>{row.remark}</span> : <span>{row.desc}</span>;
+              },
+            },
+            content: {
+              search: false,
+              render: (_text, row) => [<ListContent key="context" {...row} />],
+            },
+            actions: {
+              render: (_text, row) => [
+                <Fragment key={'status'}>
+                  {row.enabled ? (
+                    <a
+                      key="disabled"
+                      onClick={() => {
+                        const confirmed = modal.warning({
+                          title: intl.formatMessage({
+                            id: 'pages.account.identity_source_list.metas.actions.disable_title',
+                          }),
+                          content: intl.formatMessage({
+                            id: 'pages.account.identity_source_list.metas.actions.disable_content',
+                          }),
+                          okText: intl.formatMessage({ id: 'app.confirm' }),
+                          centered: true,
+                          okType: 'primary',
+                          okCancel: true,
+                          cancelText: intl.formatMessage({ id: 'app.cancel' }),
+                          onOk: async () => {
+                            const { success } = await disableIdentitySource(row.id);
+                            if (success) {
+                              confirmed.destroy();
+                              message.success(intl.formatMessage({ id: 'app.operation_success' }));
+                              actionRef.current?.reload();
+                              return;
+                            }
+                          },
+                        });
+                      }}
+                    >
+                      {intl.formatMessage({ id: 'app.disable' })}
+                    </a>
+                  ) : (
+                    <a
+                      key="enabled"
+                      onClick={() => {
+                        const confirmed = modal.warning({
+                          title: intl.formatMessage({
+                            id: 'pages.account.identity_source_list.metas.actions.enable_title',
+                          }),
+                          content: intl.formatMessage({
+                            id: 'pages.account.identity_source_list.metas.actions.enable_content',
+                          }),
+                          okText: intl.formatMessage({ id: 'app.confirm' }),
+                          centered: true,
+                          okType: 'primary',
+                          okCancel: true,
+                          cancelText: intl.formatMessage({ id: 'app.cancel' }),
+                          onOk: async () => {
+                            const { success } = await enableIdentitySource(row.id);
+                            if (success) {
+                              confirmed.destroy();
+                              message.success(intl.formatMessage({ id: 'app.operation_success' }));
+                              actionRef.current?.reload();
+                              return;
+                            }
+                          },
+                        });
+                      }}
+                    >
+                      {intl.formatMessage({ id: 'app.enable' })}
+                    </a>
+                  )}
+                </Fragment>,
+                <a
+                  key={'detail'}
+                  onClick={() => {
+                    onDetailClick(row.id, row.provider);
+                  }}
+                >
+                  {intl.formatMessage({ id: 'app.detail' })}
+                </a>,
+                <a
+                  target="_blank"
+                  style={{
+                    color: 'red',
+                  }}
+                  key="remove"
+                  onClick={() => {
+                    const confirmed = modal.error({
+                      title: intl.formatMessage({
+                        id: 'pages.account.identity_source_list.metas.actions.delete_title',
+                      }),
+                      content: intl.formatMessage({
+                        id: 'pages.account.identity_source_list.metas.actions.delete_content',
+                      }),
+                      okText: intl.formatMessage({ id: 'app.confirm' }),
+                      centered: true,
+                      okType: 'primary',
+                      okCancel: true,
+                      cancelText: intl.formatMessage({ id: 'app.cancel' }),
+                      onOk: async () => {
+                        const { success } = await deleteIdentitySource(row.id);
+                        if (success) {
+                          confirmed.destroy();
+                          message.success(intl.formatMessage({ id: 'app.operation_success' }));
+                          actionRef.current?.reload();
+                          return;
+                        }
+                      },
+                    });
+                  }}
+                >
+                  {intl.formatMessage({ id: 'app.delete' })}
+                </a>,
+              ],
+            },
+          }}
+        />
+        {/*新增身份源*/}
+        <CreateModal
+          visible={createModalVisible}
+          onClose={() => {
+            setCreateModalVisible(false);
+          }}
+          onFinish={async (values: Record<string, any>) => {
+            try {
+              const { result, success } = await createIdentitySource(values);
+              if (success) {
+                setCreateModalVisible(false);
+                actionRef.current?.reload();
+                const successModal = modal.success({
+                  title: intl.formatMessage({
+                    id: 'pages.account.identity_source_list.create_modal.success.title',
+                  }),
+                  content: intl.formatMessage({
+                    id: 'pages.account.identity_source_list.create_modal.success.content',
+                  }),
+                  okText: intl.formatMessage({
+                    id: 'pages.account.identity_source_list.create_modal.success.ok_text',
+                  }),
+                  onOk: () => {
+                    successModal.destroy();
+                    history.push(`/account/identity-source/detail?id=${result.id}`);
+                  },
+                });
+                return true;
+              }
+              return false;
+            } catch (e) {
+              return false;
+            }
+          }}
+        />
+      </PageContainer>
+    </div>
+  );
+};

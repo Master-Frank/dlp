@@ -1,0 +1,327 @@
+/*
+ * eiam-console - Employee Identity and Access Management
+ * Copyright © 2005-Present Charles Co., Ltd.
+ */
+import {
+  ModalForm,
+  ProFormDependency,
+  ProFormInstance,
+  ProFormText,
+  ProFormTextArea,
+} from '@ant-design/pro-components';
+import { Spin } from 'antd';
+import * as React from 'react';
+import { useRef, useState } from 'react';
+import { useIntl } from '@@/exports';
+import { phoneIsValidNumber } from '@/utils/utils';
+import { omit } from 'lodash';
+import { administratorParamCheck } from '../../service';
+import { ParamCheckType } from '@/constant';
+import FormPhoneAreaCodeSelect from '@/components/FormPhoneAreaCodeSelect';
+import { createStyles } from 'antd-style';
+
+const layout = {
+  labelCol: { span: 4 },
+  wrapperCol: { span: 20 },
+};
+
+const useStyle = createStyles(({ prefixCls }) => {
+  return {
+    main: {
+      [`.${prefixCls}-form-item-control-input`]: {
+        width: '100%',
+      },
+    },
+  };
+});
+
+export default (props: {
+  onFinish: (formData: Record<string, string>) => Promise<boolean | void>;
+  visible: boolean;
+  onCancel: (e: React.MouseEvent | React.KeyboardEvent) => void;
+}) => {
+  const intl = useIntl();
+  const { onFinish, visible, onCancel } = props;
+  const formRef = useRef<ProFormInstance>();
+  const [submitLoading, setSubmitLoading] = useState<boolean>(false);
+
+  const { styles } = useStyle();
+
+  const validatePhoneOrEmail = () => {
+    if (formRef.current?.getFieldValue('phone') || formRef.current?.getFieldValue('email')) {
+      return Promise.resolve();
+    }
+    return Promise.reject(
+      new Error(
+        intl.formatMessage({
+          id: 'pages.setting.administrator.modal.from.phone_email.required.message',
+        }),
+      ),
+    );
+  };
+
+  return (
+    <ModalForm
+      preserve={false}
+      {...layout}
+      open={visible}
+      layout={'horizontal'}
+      labelAlign={'right'}
+      className={styles.main}
+      title={intl.formatMessage({ id: 'pages.setting.administrator.add_administrator' })}
+      width={'500px'}
+      formRef={formRef}
+      modalProps={{
+        maskClosable: true,
+        destroyOnClose: true,
+        onCancel: (e) => {
+          setSubmitLoading(false);
+          onCancel(e);
+        },
+      }}
+      onFinish={async (values: Record<string, any>) => {
+        setSubmitLoading(true);
+        try {
+          let params = omit(values, 'phoneAreaCode');
+          if (values.phone) {
+            params = { ...values, phone: `${values.phoneAreaCode}${values.phone}` };
+          }
+          params = {
+            ...params,
+          };
+          const result = await onFinish(params);
+          if (result) {
+            return Promise.resolve(true);
+          }
+          return Promise.resolve(false);
+        } finally {
+          setSubmitLoading(false);
+        }
+      }}
+    >
+      <Spin spinning={submitLoading}>
+        <ProFormText
+          name="username"
+          label={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.username',
+          })}
+          placeholder={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.username.placeholder',
+          })}
+          rules={[
+            {
+              required: true,
+              message: intl.formatMessage({
+                id: 'pages.setting.administrator.modal.from.username.rule.0.message',
+              }),
+            },
+            {
+              pattern: new RegExp('^[a-zA-Z0-9\\-_]{4,}$'),
+              message: intl.formatMessage({
+                id: 'pages.setting.administrator.modal.from.username.rule.1.message',
+              }),
+            },
+            {
+              validator: async (_rule, value) => {
+                if (!value) {
+                  return Promise.resolve();
+                }
+                setSubmitLoading(true);
+                const { success, result } = await administratorParamCheck(
+                  ParamCheckType.USERNAME,
+                  value,
+                ).finally(() => {
+                  setSubmitLoading(false);
+                });
+                if (!success) {
+                  return Promise.reject<Error>();
+                }
+                if (!result) {
+                  return Promise.reject<Error>(
+                    new Error(
+                      intl.formatMessage({
+                        id: 'pages.setting.administrator.modal.from.username.rule.2.message',
+                      }),
+                    ),
+                  );
+                }
+              },
+              validateTrigger: ['onBlur'],
+            },
+          ]}
+          extra={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.username.extra',
+          })}
+        />
+        <ProFormText.Password
+          name="password"
+          label={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.password',
+          })}
+          placeholder={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.password.placeholder',
+          })}
+          fieldProps={{
+            autoComplete: 'new-password',
+          }}
+          rules={[
+            {
+              required: true,
+              message: intl.formatMessage({
+                id: 'pages.setting.administrator.modal.from.password.rule.0.message',
+              }),
+            },
+          ]}
+        />
+        <ProFormDependency name={['phoneAreaCode']}>
+          {({ phoneAreaCode }) => {
+            return (
+              <ProFormText
+                name={['phone']}
+                label={intl.formatMessage({
+                  id: 'pages.setting.administrator.modal.from.phone',
+                })}
+                placeholder={intl.formatMessage({
+                  id: 'pages.setting.administrator.modal.from.phone.placeholder',
+                })}
+                validateFirst
+                rules={[
+                  {
+                    pattern: new RegExp('^[0-9]*$'),
+                    message: intl.formatMessage({
+                      id: 'pages.account.user_list.user.form.phone.rule.0.message',
+                    }),
+                  },
+                  {
+                    validator: validatePhoneOrEmail,
+                    validateTrigger: ['onBlur'],
+                  },
+                  {
+                    validator: async (_rule, value) => {
+                      if (!value) {
+                        return Promise.resolve();
+                      }
+                      //校验手机号格式
+                      setSubmitLoading(true);
+                      const isValidNumber = await phoneIsValidNumber(value, phoneAreaCode).finally(
+                        () => {
+                          setSubmitLoading(false);
+                        },
+                      );
+                      if (!isValidNumber) {
+                        return Promise.reject<Error>(
+                          new Error(
+                            intl.formatMessage({
+                              id: 'pages.setting.administrator.modal.from.phone.rule.0.message',
+                            }),
+                          ),
+                        );
+                      }
+                      const { success, result } = await administratorParamCheck(
+                        ParamCheckType.PHONE,
+                        `${phoneAreaCode}${value}`,
+                      );
+                      if (!success) {
+                        return Promise.reject<Error>();
+                      }
+                      if (!result) {
+                        return Promise.reject<Error>(
+                          new Error(
+                            intl.formatMessage({
+                              id: 'pages.setting.administrator.modal.from.phone.rule.1.message',
+                            }),
+                          ),
+                        );
+                      }
+                    },
+                    validateTrigger: ['onBlur'],
+                  },
+                ]}
+                addonWarpStyle={{
+                  flexWrap: 'nowrap',
+                }}
+                addonBefore={
+                  <FormPhoneAreaCodeSelect
+                    name={'phoneAreaCode'}
+                    showSearch
+                    noStyle
+                    allowClear={false}
+                    style={{ maxWidth: '200px' }}
+                    fieldProps={{
+                      placement: 'bottomLeft',
+                    }}
+                  />
+                }
+                fieldProps={{
+                  autoComplete: 'off',
+                }}
+                extra={intl.formatMessage({
+                  id: 'pages.setting.administrator.modal.from.phone.extra',
+                })}
+              />
+            );
+          }}
+        </ProFormDependency>
+        <ProFormText
+          name="email"
+          label={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.email',
+          })}
+          placeholder={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.email.placeholder',
+          })}
+          validateFirst
+          rules={[
+            {
+              validator: validatePhoneOrEmail,
+              validateTrigger: ['onBlur'],
+            },
+            {
+              type: 'email',
+              message: intl.formatMessage({
+                id: 'pages.setting.administrator.modal.from.email.rule.0.message',
+              }),
+            },
+            {
+              validator: async (_rule, value) => {
+                if (!value) {
+                  return Promise.resolve();
+                }
+                setSubmitLoading(true);
+                const { success, result } = await administratorParamCheck(
+                  ParamCheckType.EMAIL,
+                  value,
+                ).finally(() => {
+                  setSubmitLoading(false);
+                });
+                if (success && !result) {
+                  return Promise.reject<Error>(
+                    new Error(
+                      intl.formatMessage({
+                        id: 'pages.setting.administrator.modal.from.email.rule.1.message',
+                      }),
+                    ),
+                  );
+                }
+              },
+              validateTrigger: ['onBlur'],
+            },
+          ]}
+          extra={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.email.extra',
+          })}
+        />
+        <ProFormTextArea
+          name="remark"
+          fieldProps={{ rows: 2 }}
+          placeholder={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.remark.placeholder',
+          })}
+          label={intl.formatMessage({
+            id: 'pages.setting.administrator.modal.from.remark',
+          })}
+        />
+      </Spin>
+    </ModalForm>
+  );
+};

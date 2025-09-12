@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    eiam-protocol - Employee Identity and Access Management
+    Copyright © 2022-Present Charles Network Technology Co., Ltd.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>cn.topiam</groupId>
+        <artifactId>dlp</artifactId>
+        <version>1.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>eiam-protocol</artifactId>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>eiam-protocol-form</module>
+        <module>eiam-protocol-jwt</module>
+        <module>eiam-protocol-oidc</module>
+        <module>eiam-protocol-core</module>
+        <module>eiam-protocol-all</module>
+    </modules>
+    <dependencies>
+        <!--all-->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-application-all</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+
+</project>

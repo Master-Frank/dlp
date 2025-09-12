@@ -1,0 +1,185 @@
+/*
+ * eiam-console - Employee Identity and Access Management
+ * Copyright © 2005-Present Charles Co., Ltd.
+ */
+import { ProForm, ProFormText } from '@ant-design/pro-components';
+import { useAsyncEffect } from 'ahooks';
+import { Form, Typography } from 'antd';
+import { useIntl } from '@umijs/max';
+import { createStyles } from 'antd-style';
+import { ColProps } from 'antd/es/grid/col';
+
+const useStyles = createStyles(({}) => ({
+  config: {
+    backgroundColor: '#f1f1f2',
+  },
+}));
+/**
+ * 配置信息
+ *
+ * @param props
+ */
+export default (props: {
+  appId: string;
+  protocolEndpoint: Record<string, string>;
+  collapsed?: boolean;
+  labelCol?: ColProps;
+  wrapperCol?: ColProps;
+}) => {
+  const [configForm] = Form.useForm();
+  const {
+    protocolEndpoint,
+    appId,
+    labelCol = {
+      span: 6,
+    },
+    wrapperCol = {
+      span: 14,
+    },
+  } = props;
+  const intl = useIntl();
+  const { styles } = useStyles();
+
+  useAsyncEffect(async () => {
+    configForm.setFieldsValue(protocolEndpoint);
+  }, [appId, protocolEndpoint]);
+
+  return (
+    <ProForm
+      layout={'horizontal'}
+      labelCol={labelCol}
+      wrapperCol={wrapperCol}
+      labelAlign={'right'}
+      submitter={false}
+      labelWrap
+      form={configForm}
+      className={styles.config}
+    >
+      <ProFormText
+        label="Issuer"
+        name={'issuer'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.config_about.issuer.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.discovery_endpoint',
+        })}
+        name={'discoveryEndpoint'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.discovery_endpoint.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.authorization_endpoint',
+        })}
+        name={'authorizationEndpoint'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.authorization_endpoint.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.token_endpoint',
+        })}
+        name={'tokenEndpoint'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.token_endpoint.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.revoke_endpoint',
+        })}
+        name={'revokeEndpoint'}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.jwks_endpoint',
+        })}
+        name={'jwksEndpoint'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.jwks_endpoint.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.userinfo_endpoint',
+        })}
+        name={'userinfoEndpoint'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.userinfo_endpoint.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{ autoComplete: 'off' }}
+      />
+      <ProFormText
+        label={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.end_session_endpoint',
+        })}
+        name={'endSessionEndpoint'}
+        extra={intl.formatMessage({
+          id: 'pages.app.config.detail.protocol_config.oidc.end_session_endpoint.extra',
+        })}
+        proFieldProps={{
+          render: (value: string) => {
+            return value && <Typography.Text copyable>{value}</Typography.Text>;
+          },
+        }}
+        readonly
+        fieldProps={{
+          autoComplete: 'off',
+        }}
+      />
+    </ProForm>
+  );
+};

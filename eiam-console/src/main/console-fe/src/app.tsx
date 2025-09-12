@@ -1,0 +1,186 @@
+/*
+ * eiam-console - Employee Identity and Access Management
+ * Copyright © 2005-Present Charles Co., Ltd.
+ */
+import { isLoginPath, isResetPasswordPath, isSessionExpiredPath, LOGIN_PATH } from '@/utils/utils';
+import type { MenuDataItem, Settings as LayoutSettings } from '@ant-design/pro-components';
+import { ProLayoutProps } from '@ant-design/pro-components';
+import queryString from 'query-string';
+import { history, RunTimeLayoutConfig, SelectLang } from '@umijs/max';
+import defaultSettings from '../config/defaultSettings';
+import { getCurrent } from './services/user';
+import { requestConfig } from '@/request';
+import PageLoading from '@/components/PageLoading';
+import React from 'react';
+import Banner from '@/components/Banner';
+import { AvatarProps } from 'antd';
+// import { GithubFilled, QuestionCircleFilled } from '@ant-design/icons';
+import About from '@/components/About';
+import { AvatarDropdown, AvatarName } from '@/components/RightContent/AvatarDropdown';
+import PageContainer from '@/components/PageContainer';
+
+/**
+ * 跳转登录页面
+ */
+const goLogin = () => {
+  const query = queryString.parse(history.location.search);
+  const { redirect_uri } = query as { redirect_uri: string };
+  history.replace({
+    pathname: LOGIN_PATH,
+    search:
+      redirect_uri &&
+      queryString.stringify({
+        redirect_uri: redirect_uri,
+      }),
+  });
+};
+
+/**
+ * 获取当前用户信息
+ */
+const fetchUserInfo = async (): Promise<API.CurrentUser | undefined> => {
+  const result = await getCurrent().catch(() => undefined);
+  if (result?.success && result.result) {
+    return result.result;
+  }
+  return undefined;
+};
+
+export async function getInitialState(): Promise<{
+  fetchUserInfo: () => Promise<API.CurrentUser | undefined>;
+  settings: Partial<LayoutSettings>;
+  currentUser: API.CurrentUser | undefined;
+}> {
+  console.log('%c欢迎使用 ULP 统一登录平台', 'font-size: 18px;');
+  return {
+    fetchUserInfo,
+    currentUser: isLoginPath() || isResetPasswordPath() ? undefined : await fetchUserInfo(),
+    settings: {
+      ...defaultSettings,
+    } as Partial<LayoutSettings>,
+  };
+}
+// ProLayout 支持的api https://procomponents.ant.design/components/layout
+export const layout: RunTimeLayoutConfig = ({ initialState, loading }) => {
+  return {
+    bgLayoutImgList: [
+      {
+        src: 'https://img.alicdn.com/imgextra/i2/O1CN01O4etvp1DvpFLKfuWq_!!6000000000279-2-tps-609-606.png',
+        left: 85,
+        bottom: 100,
+        height: '303px',
+      },
+      {
+        src: 'https://img.alicdn.com/imgextra/i2/O1CN01O4etvp1DvpFLKfuWq_!!6000000000279-2-tps-609-606.png',
+        bottom: -68,
+        right: -45,
+        height: '303px',
+      },
+      {
+        src: 'https://img.alicdn.com/imgextra/i3/O1CN018NxReL1shX85Yz6Cx_!!6000000005798-2-tps-884-496.png',
+        bottom: 0,
+        left: 0,
+        width: '331px',
+      },
+    ],
+    bgLayout: '#fff',
+    token: {
+      sider: {
+        colorMenuBackground: '#fff',
+        colorTextMenu: '#595959',
+        colorTextMenuSelected: 'rgba(42,122,251,1)',
+        colorTextMenuItemHover: 'rgba(42,122,251,1)',
+      },
+      header: {
+        colorBgHeader: '#fff',
+        heightLayoutHeader: 78,
+      },
+      pageContainer: {
+        paddingBlockPageContainerContent: 12,
+        paddingInlinePageContainerContent: 24,
+      },
+    },
+    headerRender: (props: ProLayoutProps, defaultDom: React.ReactNode) => {
+      return (
+        <>
+          <Banner play={props.isMobile} />
+          {React.cloneElement(defaultDom as any, {
+            style: {
+              height: '56px',
+              lineHeight: '56px',
+            },
+          })}
+        </>
+      );
+    },
+    avatarProps: {
+      src: initialState?.currentUser?.avatar,
+      size: 'small',
+      title: <AvatarName />,
+      render: (_props: AvatarProps, defaultDom: React.ReactNode) => {
+        return <AvatarDropdown>{defaultDom}</AvatarDropdown>;
+      },
+    },
+    actionsRender: (props: ProLayoutProps) => {
+      if (props.isMobile) return [];
+      return [
+        <About key={'about'} />,
+        // <QuestionCircleFilled
+        //   key="QuestionCircleFilled"
+        //   onClick={() => {
+        //     window.open('https://baidu.com');
+        //   }}
+        // />,
+        // <GithubFilled
+        //   key="GithubFilled"
+        //   onClick={() => {
+        //     window.open('https://github.com');
+        //   }}
+        // />,
+        <SelectLang key="SelectLang" />,
+      ];
+    },
+    disableContentMargin: false,
+    waterMarkProps: {
+      content: initialState?.currentUser?.username,
+    },
+    childrenRender: (dom) => {
+      if (loading) {
+        return <PageLoading />;
+      }
+      return <PageContainer>{dom}</PageContainer>;
+    },
+    menuDataRender: (menuData: MenuDataItem[]) => {
+      return menuData;
+    },
+    onPageChange: () => {
+      let gotoLogin: boolean = false;
+      //任何一项没有数据没有数据
+      if (!initialState || !initialState?.currentUser) {
+        gotoLogin = true;
+      }
+      // 上述判断需要登录、路径为登录路径，会话过期路径不拦截
+      // prettier-ignore
+      if (gotoLogin && (isLoginPath() || isSessionExpiredPath() || isResetPasswordPath())) {
+        return;
+      }
+      //登录页面
+      if (gotoLogin) {
+        goLogin();
+        return;
+      }
+    },
+    links: [],
+    menuHeaderRender: undefined,
+    ...initialState?.settings,
+  };
+};
+
+/**
+ * @name request 配置，可以配置错误处理
+ * 它基于 axios 和 ahooks 的 useRequest 提供了一套统一的网络请求和错误处理方案。
+ * @doc https://umijs.org/docs/max/request#配置
+ */
+export const request = {
+  ...requestConfig,
+};

@@ -1,0 +1,82 @@
+/*
+ * eiam-common - Employee Identity and Access Management
+ * Copyright © 2022-Present Charles Network Technology Co., Ltd.
+ */
+package cn.topiam.employee.common.entity.message;
+
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.SoftDelete;
+
+import cn.topiam.employee.common.enums.MailType;
+import cn.topiam.employee.common.message.enums.MailProvider;
+import cn.topiam.employee.support.repository.SoftDeleteConverter;
+import cn.topiam.employee.support.repository.base.BaseEntity;
+
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.experimental.Accessors;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import static cn.topiam.employee.support.repository.base.BaseEntity.IS_DELETED_COLUMN;
+
+/**
+ * 邮件发送记录
+ *
+ * @author TopIAM
+ * Created by support@topiam.cn on 2021/8/1 21:41
+ */
+@Entity
+@Accessors(chain = true)
+@Getter
+@Setter
+@ToString
+@Table(name = "eiam_mail_send_record")
+@SoftDelete(columnName = IS_DELETED_COLUMN, converter = SoftDeleteConverter.class)
+public class MailSendRecordEntity extends BaseEntity {
+    /**
+     * subject
+     */
+    @Column(name = "subject_")
+    private String        subject;
+    /**
+     * sender
+     */
+    @Column(name = "sender_")
+    private String        sender;
+    /**
+     * receiver
+     */
+    @Column(name = "receiver_")
+    private String        receiver;
+    /**
+     * content
+     */
+    @Column(name = "content_")
+    private String        content;
+    /**
+     * 消息类型
+     */
+    @Column(name = "type_")
+    private MailType      type;
+    /**
+     * 平台
+     */
+    @Column(name = "provider_")
+    private MailProvider  provider;
+
+    /**
+     * 是否成功
+     */
+    @Column(name = "is_success")
+    private Boolean       success;
+
+    /**
+     * 发送时间
+     */
+    @Column(name = "send_time")
+    private LocalDateTime sendTime;
+}

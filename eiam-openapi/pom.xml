@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    eiam-openapi - Employee Identity and Access Management
+    Copyright © 2022-Present Charles Network Technology Co., Ltd.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>cn.topiam</groupId>
+        <artifactId>dlp</artifactId>
+        <version>1.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>eiam-openapi</artifactId>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <!--审计-->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-audit</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+    <!-- build -->
+    <build>
+        <!--打包后名称-->
+        <finalName>topiam-employee-openapi-${project.version}</finalName>
+        <plugins>
+            <!--spring-boot-maven-plugin-->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile>
+            <id>dev</id>
+        </profile>
+        <profile>
+            <id>preview</id>
+        </profile>
+        <profile>
+            <id>release</id>
+        </profile>
+    </profiles>
+</project>

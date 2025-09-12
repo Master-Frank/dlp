@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    eiam-portal - Employee Identity and Access Management
+    Copyright © 2022-Present Charles Network Technology Co., Ltd.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>cn.topiam</groupId>
+        <artifactId>dlp</artifactId>
+        <version>1.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>eiam-portal</artifactId>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <!--   协议     -->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-protocol-all</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!--   认证     -->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-authentication-all</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!--   应用     -->
+        <dependency>
+            <groupId>cn.topiam</groupId>
+            <artifactId>eiam-application-all</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+    <!-- build -->
+    <build>
+        <!--打包后名称-->
+        <finalName>topiam-employee-portal-${project.version}</finalName>
+        <plugins>
+            <!--spring-boot-maven-plugin-->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--清理-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>${maven-clean-plugin.version}</version>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>src/main/portal-fe/</directory>
+                            <followSymlinks>false</followSymlinks>
+                            <includes>
+                                <include>build/**</include>
+                                <include>yarn.lock</include>
+                                <include>package-lock.json</include>
+                                <include>pnpm-lock.yaml</include>
+                                <include>yarn-error.log</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
+                </configuration>
+            </plugin>
+        </plugins>
+        <resources>
+            <!-- 将 npm run build 后的 dist 内容复制到 resources 目录下 -->
+            <resource>
+                <directory>src/main/portal-fe/build</directory>
+                <targetPath>fe</targetPath>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>
+                    <include>**/*</include>
+                </includes>
+            </resource>
+        </resources>
+    </build>
+    <profiles>
+        <profile>
+            <id>dev</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <!--编译打包前端项目-->
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>${frontend-maven-plugin.version}</version>
+                        <configuration>
+                            <installDirectory>target</installDirectory>
+                            <workingDirectory>src/main/portal-fe</workingDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>install node and pnpm</id>
+                                <goals>
+                                    <goal>install-node-and-pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <nodeDownloadRoot>https://mirrors.aliyun.com/nodejs-release/</nodeDownloadRoot>
+                                    <nodeVersion>v22.12.0</nodeVersion>
+                                    <pnpmVersion>v9.15.1</pnpmVersion>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>pnpm install</id>
+                                <goals>
+                                    <goal>pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>install</arguments>
+                                    <pnpmRegistryURL>https://registry.npmmirror.com</pnpmRegistryURL>
+                                    <pnpmInheritsProxyConfigFromMaven>true</pnpmInheritsProxyConfigFromMaven>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>pnpm run build</id>
+                                <goals>
+                                    <goal>pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run build:dev</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>preview</id>
+            <build>
+                <plugins>
+                    <!--编译打包前端项目-->
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>${frontend-maven-plugin.version}</version>
+                        <configuration>
+                            <installDirectory>target</installDirectory>
+                            <workingDirectory>src/main/portal-fe</workingDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>install node and pnpm</id>
+                                <goals>
+                                    <goal>install-node-and-pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <nodeDownloadRoot>https://mirrors.aliyun.com/nodejs-release/</nodeDownloadRoot>
+                                    <nodeVersion>v22.12.0</nodeVersion>
+                                    <pnpmVersion>v9.15.1</pnpmVersion>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>pnpm install</id>
+                                <goals>
+                                    <goal>pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>install</arguments>
+                                    <pnpmRegistryURL>https://registry.npmmirror.com</pnpmRegistryURL>
+                                    <pnpmInheritsProxyConfigFromMaven>true</pnpmInheritsProxyConfigFromMaven>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>pnpm run build</id>
+                                <goals>
+                                    <goal>pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run build:pre</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!--编译打包前端项目-->
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>${frontend-maven-plugin.version}</version>
+                        <configuration>
+                            <installDirectory>target</installDirectory>
+                            <workingDirectory>src/main/portal-fe</workingDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>install node and pnpm</id>
+                                <goals>
+                                    <goal>install-node-and-pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <nodeDownloadRoot>https://mirrors.aliyun.com/nodejs-release/</nodeDownloadRoot>
+                                    <nodeVersion>v22.12.0</nodeVersion>
+                                    <pnpmVersion>v9.15.1</pnpmVersion>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>pnpm install</id>
+                                <goals>
+                                    <goal>pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>install</arguments>
+                                    <pnpmRegistryURL>https://registry.npmmirror.com</pnpmRegistryURL>
+                                    <pnpmInheritsProxyConfigFromMaven>true</pnpmInheritsProxyConfigFromMaven>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>pnpm run build</id>
+                                <goals>
+                                    <goal>pnpm</goal>
+                                </goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run build</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
