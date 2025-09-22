@@ -53,6 +53,7 @@
         <module>eiam-authentication</module>
         <module>eiam-audit</module>
         <module>eiam-synchronizer</module>
+        <module>dlp-support</module>
     </modules>
     <repositories>
         <repository>
