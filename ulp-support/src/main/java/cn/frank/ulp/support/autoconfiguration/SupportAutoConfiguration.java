@@ -19,8 +19,10 @@ package cn.frank.ulp.support.autoconfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
+import cn.frank.ulp.support.security.mfa.MfaProperties;
+
 /**
- * 为消费 ulp-support 的下游模块注册 {@link SupportProperties}。
+ * 为消费 ulp-support 的下游模块注册 {@link SupportProperties} 与 {@link MfaProperties}。
  *
  * <p>历史背景：原 eiam-support 私有 jar 里有一个等价的 auto-configuration，去 TOPIAM 反编译之后丢了；
  * 因为 SupportProperties 仅用 {@code @ConfigurationProperties} 注解（不是 stereotype），
@@ -34,6 +36,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * 覆盖整个 {@code cn.frank.ulp.**} 子树。</p>
  */
 @AutoConfiguration
-@EnableConfigurationProperties(SupportProperties.class)
+@EnableConfigurationProperties({ SupportProperties.class, MfaProperties.class })
 public class SupportAutoConfiguration {
 }

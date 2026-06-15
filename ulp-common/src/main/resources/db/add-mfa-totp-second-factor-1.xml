@@ -1,0 +1,87 @@
+<?xml version="1.1" encoding="UTF-8" standalone="no"?>
+<!--
+
+    ulp-common - United Login Platform
+    Copyright (c) 2022-Present Frank Zhang
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd
+          http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/pro/liquibase-pro-4.3.xsd">
+
+    <!--
+        MFA TOTP 第二因子 — Phase 1 schema:
+          * ulp_administrator / ulp_user 各加三列：mfa_enabled / totp_secret_cipher / backup_codes_json
+          * ulp_organization 加 mfa_enforced（OR 语义、不沿父链继承，由应用层判定）
+
+        默认值 mfa_enabled = FALSE / mfa_enforced = FALSE 保证升级零中断：
+          - 现存账号不受影响，仍只校验密码登录；
+          - 现存组织未启用强制 MFA，组织管理员需显式打开；
+          - totp_secret_cipher 是 AES-GCM 密文 (Base64) 上限 ~140 char，留 VARCHAR(255) 足够冗余；
+          - backup_codes_json 是 Argon2id 哈希后的 JSON 数组，TEXT 因 Argon2 编码字符串单条约 100 字节 × 10 ≈ 1KB。
+    -->
+    <changeSet author="Frank" id="add-mfa-totp-second-factor-1">
+        <!-- ulp_administrator MFA 列 -->
+        <addColumn tableName="${ulp_table_prefix}administrator">
+            <column name="mfa_enabled" remarks="是否启用 MFA 第二因子" type="BOOLEAN"
+                    defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="totp_secret_cipher" remarks="AES-GCM 加密后的 TOTP shared secret (Base64)"
+                    type="VARCHAR(255)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="backup_codes_json" remarks="备份码 Argon2id 哈希数组 (JSON)" type="TEXT">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <!-- ulp_user MFA 列 -->
+        <addColumn tableName="${ulp_table_prefix}user">
+            <column name="mfa_enabled" remarks="是否启用 MFA 第二因子" type="BOOLEAN"
+                    defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="totp_secret_cipher" remarks="AES-GCM 加密后的 TOTP shared secret (Base64)"
+                    type="VARCHAR(255)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="backup_codes_json" remarks="备份码 Argon2id 哈希数组 (JSON)" type="TEXT">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <!-- ulp_organization 强制开关 -->
+        <addColumn tableName="${ulp_table_prefix}organization">
+            <column name="mfa_enforced" remarks="组织是否强制成员启用 MFA (OR 语义, 不沿父链)"
+                    type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <rollback>
+            <dropColumn tableName="${ulp_table_prefix}administrator" columnName="mfa_enabled"/>
+            <dropColumn tableName="${ulp_table_prefix}administrator" columnName="totp_secret_cipher"/>
+            <dropColumn tableName="${ulp_table_prefix}administrator" columnName="backup_codes_json"/>
+            <dropColumn tableName="${ulp_table_prefix}user" columnName="mfa_enabled"/>
+            <dropColumn tableName="${ulp_table_prefix}user" columnName="totp_secret_cipher"/>
+            <dropColumn tableName="${ulp_table_prefix}user" columnName="backup_codes_json"/>
+            <dropColumn tableName="${ulp_table_prefix}organization" columnName="mfa_enforced"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

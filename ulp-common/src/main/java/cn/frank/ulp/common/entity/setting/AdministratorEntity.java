@@ -160,6 +160,24 @@ public class AdministratorEntity extends BaseEntity {
     private LocalDateTime      lastUpdatePasswordTime;
 
     /**
+     * 是否启用 MFA 第二因子
+     */
+    @Column(name = "mfa_enabled")
+    private Boolean            mfaEnabled;
+
+    /**
+     * AES-GCM 加密后的 TOTP shared secret (Base64)
+     */
+    @Column(name = "totp_secret_cipher")
+    private String             totpSecretCipher;
+
+    /**
+     * 备份码 Argon2id 哈希数组 (JSON)
+     */
+    @Column(name = "backup_codes_json")
+    private String             backupCodesJson;
+
+    /**
      * 扩展参数
      */
     @Column(name = "expand_")

@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /**
  * ULP 集成测试共享基础设施。
  *

@@ -95,6 +95,7 @@
         <pinyin4j.version>2.5.1</pinyin4j.version>
         <nanoid.version>4.0.1</nanoid.version>
         <zxing.version>3.5.3</zxing.version>
+        <samstevens-totp.version>1.7.1</samstevens-totp.version>
         <reflections.version>0.10.2</reflections.version>
         <commons-io.version>2.18.0</commons-io.version>
         <commons-net.version>3.11.1</commons-net.version>
@@ -217,6 +218,22 @@
                 <groupId>com.google.zxing</groupId>
                 <artifactId>javase</artifactId>
                 <version>${zxing.version}</version>
+            </dependency>
+            <!-- TOTP (RFC 6238) for MFA second factor; FE renders QR via 'qrcode' npm so zxing is excluded -->
+            <dependency>
+                <groupId>dev.samstevens.totp</groupId>
+                <artifactId>totp</artifactId>
+                <version>${samstevens-totp.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.google.zxing</groupId>
+                        <artifactId>core</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>com.google.zxing</groupId>
+                        <artifactId>javase</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>org.reflections</groupId>
@@ -492,6 +509,11 @@
         <dependency>
             <groupId>com.google.zxing</groupId>
             <artifactId>javase</artifactId>
+        </dependency>
+        <!-- TOTP for MFA second factor (version + zxing exclusions managed in dependencyManagement) -->
+        <dependency>
+            <groupId>dev.samstevens.totp</groupId>
+            <artifactId>totp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>

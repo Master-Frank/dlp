@@ -272,4 +272,13 @@ public interface OrganizationRepository extends JpaRepository<OrganizationEntity
                     organization.id = :orgId OR LOCATE(:orgId, organization.path) > 0
             """)
     List<String> getOrgMemberList(@Param("orgId") String orgId);
+
+    /**
+     * 判定给定组织集合中是否任一启用了 MFA 强制策略（OR 语义）。
+     * <p>Hibernate {@code @SoftDelete} 会自动过滤已软删的组织，故无需显式 {@code AndDeletedFalse}。
+     *
+     * @param orgIds 用户当前所属的全部组织 ID
+     * @return 任一组织 {@code mfa_enforced = true} 返回 true
+     */
+    boolean existsByIdInAndMfaEnforcedTrue(Collection<String> orgIds);
 }

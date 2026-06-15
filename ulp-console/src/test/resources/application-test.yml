@@ -7,3 +7,7 @@ ulp:
     open-api-public-base-url: http://localhost
   demo:
     enabled: false
+  mfa:
+    # Test-only KEK: Base64 of "test-mfa-kek-for-tests-only-xxxx" (32 bytes).
+    # 集成测试用固定值即可；MfaSecretCipher.validateKek 只校验长度/格式，不绑特定值。
+    key-encryption-key: dGVzdC1tZmEta2VrLWZvci10ZXN0cy1vbmx5LXh4eHg=

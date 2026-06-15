@@ -91,4 +91,13 @@ public interface OrganizationMemberRepository extends
      */
     @Query(value = "SELECT NEW cn.frank.ulp.common.entity.account.po.OrganizationMemberPO(om.id,om.userId,om.orgId,o.name,o.displayPath) FROM OrganizationMemberEntity om LEFT JOIN OrganizationEntity o ON o.id= om.orgId WHERE om.userId =:userId")
     List<OrganizationMemberPO> findAllPoByUserId(String userId);
+
+    /**
+     * 查询用户所属的全部组织 ID（用于 MFA 强制策略判定）
+     *
+     * @param userId {@link String}
+     * @return 组织 ID 列表
+     */
+    @Query("SELECT om.orgId FROM OrganizationMemberEntity om WHERE om.userId = :userId")
+    List<String> findOrgIdsByUserId(@Param("userId") String userId);
 }

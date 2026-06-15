@@ -163,3 +163,9 @@ ulp:
     # 公开 demo 站点保护开关：true 时所有 @Preview 写操作返回 403。
     # 自部署 / 本地开发保持 false；仅公开体验站点设 true。
     enabled: false
+  mfa:
+    # AES-256 Key Encryption Key (Base64-encoded 32 bytes). 生产部署 MUST 经环境变量注入：
+    #   ULP_MFA_KEK=$(openssl rand -base64 32)
+    # 缺失 / 长度错 / 非合法 Base64 → 应用启动失败 (MfaSecretCipher.validateKek)。
+    # ulp-openapi 虽不直接装配 MFA 端点，但依赖 ulp-support，KEK 校验在 bean 创建时触发。
+    key-encryption-key: ${ULP_MFA_KEK:}

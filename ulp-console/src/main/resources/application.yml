@@ -173,3 +173,8 @@ ulp:
       # 读取已认证响应）。示例：
       # allowed-origins: ["https://console.example.com", "https://admin.example.com"]
       allowed-origins: []
+  mfa:
+    # AES-256 Key Encryption Key (Base64-encoded 32 bytes). 生产部署 MUST 经环境变量注入：
+    #   ULP_MFA_KEK=$(openssl rand -base64 32)
+    # 缺失 / 长度错 / 非合法 Base64 → 应用启动失败 (MfaSecretCipher.validateKek)。
+    key-encryption-key: ${ULP_MFA_KEK:}

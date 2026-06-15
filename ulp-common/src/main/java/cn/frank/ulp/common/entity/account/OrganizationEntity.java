@@ -125,6 +125,12 @@ public class OrganizationEntity extends BaseEntity {
     @Column(name = "is_enabled")
     private Boolean           enabled;
 
+    /**
+     * 是否强制成员启用 MFA (OR 语义, 不沿父链)
+     */
+    @Column(name = "mfa_enforced")
+    private Boolean           mfaEnforced;
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
