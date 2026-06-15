@@ -17,6 +17,7 @@
 package cn.frank.ulp.console.configuration;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,6 +30,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.http.HttpMethod;
@@ -64,11 +67,23 @@ import cn.frank.ulp.common.entity.setting.SettingEntity;
 import cn.frank.ulp.common.repository.setting.AdministratorRepository;
 import cn.frank.ulp.common.repository.setting.SettingRepository;
 import cn.frank.ulp.console.authentication.*;
+import cn.frank.ulp.console.service.security.AdministratorMfaService;
 import cn.frank.ulp.support.geo.GeoLocationParser;
 import cn.frank.ulp.support.jackjson.SupportJackson2Module;
 import cn.frank.ulp.support.security.authentication.WebAuthenticationDetailsSource;
 import cn.frank.ulp.support.security.configurer.FormLoginConfigurer;
 import cn.frank.ulp.support.security.csrf.SpaCsrfTokenRequestHandler;
+import cn.frank.ulp.support.security.mfa.MfaAwareAuthenticationSuccessHandler;
+import cn.frank.ulp.support.security.mfa.MfaChallengeService;
+import cn.frank.ulp.support.security.mfa.MfaCodeVerifier;
+import cn.frank.ulp.support.security.mfa.MfaDecision;
+import cn.frank.ulp.support.security.mfa.MfaLockoutService;
+import cn.frank.ulp.support.security.mfa.MfaPendingAuthenticationStore;
+import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
+import cn.frank.ulp.support.security.mfa.MfaService;
+import cn.frank.ulp.support.security.mfa.MfaTriggerStrategy;
+import cn.frank.ulp.support.security.userdetails.UserDetails;
+import cn.frank.ulp.support.security.userdetails.UserType;
 import cn.frank.ulp.support.web.useragent.UserAgentParser;
 
 import lombok.RequiredArgsConstructor;
@@ -115,7 +130,9 @@ public class ConsoleSecurityConfiguration implements BeanClassLoaderAware {
      * @throws Exception Exception
      */
     @Bean(name = DEFAULT_SECURITY_FILTER_CHAIN)
-    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
+                                                   MfaTriggerStrategy mfaTriggerStrategy,
+                                                   MfaPendingAuthenticationStore mfaPendingStore) throws Exception {
         // @formatter:off
         // 系统配置
         httpSecurity
@@ -142,7 +159,7 @@ public class ConsoleSecurityConfiguration implements BeanClassLoaderAware {
                 .logout(withLogoutConfigurerDefaults())
                 //会话管理器
                 .sessionManagement(withSessionManagementConfigurerDefaults(settingRepository))
-                .with(withFormLoginConfigurer(),configurer-> {});
+                .with(withFormLoginConfigurer(mfaTriggerStrategy, mfaPendingStore),configurer-> {});
         // @formatter:on
         return httpSecurity.build();
     }
@@ -190,6 +207,11 @@ public class ConsoleSecurityConfiguration implements BeanClassLoaderAware {
             registry.requestMatchers(PathPatternRequestMatcher.pathPattern(CURRENT_STATUS)).permitAll();
             registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.GET, PUBLIC_SECRET_PATH)).permitAll();
             registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, RESET_PASSWORD_PATH)).permitAll();
+            // MFA 第二因子挑战端点：处于"已通过主认证但未提交 TOTP"的中间态。SecurityContext 在
+            // MfaAwareAuthenticationSuccessHandler 里已经被清空，此时 anyRequest().authenticated()
+            // 会直接 401，所以必须显式放行。安全性靠 cookie 一次性 UUID + 5 分钟 TTL + Redis
+            // pending /24 IP 绑定共同兜底，端点自身内部做完整 outcome 校验。
+            registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/api/v1/mfa/challenge")).permitAll();
             registry.anyRequest().authenticated();
         };
         //@formatter:on
@@ -364,15 +386,25 @@ public class ConsoleSecurityConfiguration implements BeanClassLoaderAware {
     }
 
     /**
-     * 表单登录
+     * 表单登录。
+     *
+     * <p>登录成功后由 {@link MfaAwareAuthenticationSuccessHandler} 在 {@link ConsoleAuthenticationSuccessHandler}
+     * 之前判定是否需要二次因子：未绑定 MFA 直接走原 handler 提交 session；已绑定则把
+     * {@link org.springframework.security.core.Authentication} 暂存到 Redis 并下发
+     * {@code mfa_required} + cookie，等待 {@code POST /api/v1/mfa/challenge} 完成 OTP 验证。
+     *
+     * <p>console 侧策略由 {@link #consoleMfaTriggerStrategy(AdministratorMfaService)} 提供，
+     * 永远不会发出 {@link MfaDecision#SETUP_REQUIRED}（管理员 MFA 是自愿、非强制）。
      *
      * @return {@link FormLoginConfigurer}
      */
-    public FormLoginConfigurer<HttpSecurity> withFormLoginConfigurer() {
+    public FormLoginConfigurer<HttpSecurity> withFormLoginConfigurer(MfaTriggerStrategy mfaTriggerStrategy,
+                                                                     MfaPendingAuthenticationStore mfaPendingStore) {
         // @formatter:off
-        AuthenticationSuccessHandler successHandler = new ConsoleAuthenticationSuccessHandler(administratorRepository,  auditEventPublish );
+        AuthenticationSuccessHandler delegateSuccess = new ConsoleAuthenticationSuccessHandler(administratorRepository,  auditEventPublish );
+        AuthenticationSuccessHandler mfaAware = new MfaAwareAuthenticationSuccessHandler(delegateSuccess, mfaTriggerStrategy, mfaPendingStore);
         FormLoginConfigurer<HttpSecurity> configurer=new FormLoginConfigurer<>();
-        configurer.successHandler(successHandler);
+        configurer.successHandler(mfaAware);
         configurer.failureHandler(new ConsoleAuthenticationFailureHandler());
         return configurer;
         // @formatter:on
@@ -441,6 +473,81 @@ public class ConsoleSecurityConfiguration implements BeanClassLoaderAware {
             .changeDefaultPropertyInclusion(v -> v.withValueInclusion(JsonInclude.Include.NON_NULL))
             .build();
         return new GenericJacksonJsonRedisSerializer(mapper);
+    }
+
+    /**
+     * Redis-backed pending-challenge store。复用 {@link #springSessionDefaultRedisSerializer()}
+     * 的 Jackson 3 + {@code AuthenticationJacksonModule} 序列化器，让 pending
+     * {@link org.springframework.security.core.Authentication} 的 round-trip 与 Spring Session
+     * 写入 live session 的 schema 完全一致——一次配置覆盖两条路径，避免 deserializer drift。
+     */
+    @Bean
+    public MfaPendingAuthenticationStore mfaPendingAuthenticationStore(RedisConnectionFactory connectionFactory,
+                                                                       RedisSerializer<Object> springSessionDefaultRedisSerializer) {
+        return new MfaPendingAuthenticationStore(connectionFactory,
+            springSessionDefaultRedisSerializer);
+    }
+
+    /**
+     * Brute-force throttle for MFA challenge：默认 5 次失败 / 15 分钟窗口，counter 写在
+     * {@code ULP_MFA_FAIL:admin:{adminId}}。窗口 / 阈值在生产需要灰度时可改成
+     * {@code @ConfigurationProperties} 注入；当前默认值已对齐 spec.md。
+     */
+    @Bean
+    public MfaLockoutService mfaLockoutService(StringRedisTemplate redisTemplate) {
+        return new MfaLockoutService(redisTemplate);
+    }
+
+    /**
+     * 第二因子 verify-and-commit 引擎。{@link Collection} 注入会自动包含所有
+     * {@link MfaService} bean —— console 当前只有 {@link AdministratorMfaService}，未来若新增
+     * 其他 subject 类型，新 bean 注册即可，本配置无需改动。
+     */
+    @Bean
+    public MfaChallengeService mfaChallengeService(MfaPendingAuthenticationStore mfaPendingStore,
+                                                   MfaLockoutService mfaLockoutService,
+                                                   MfaCodeVerifier codeVerifier,
+                                                   MfaSecretCipher secretCipher,
+                                                   Collection<MfaService> mfaServices) {
+        return new MfaChallengeService(mfaPendingStore, mfaLockoutService, codeVerifier,
+            secretCipher, mfaServices);
+    }
+
+    /**
+     * Console 侧 MFA 触发策略：principal 为管理员且已绑定（{@code totp_secret_cipher != null}）
+     * 时返回 {@link MfaDecision#CHALLENGE_REQUIRED}，否则 {@link MfaDecision#DIRECT_LOGIN}。
+     *
+     * <p>实现注意：
+     * <ul>
+     *   <li>非 {@link UserDetails} principal / userType 不是 admin / 缺 id —— 一律
+     *       {@link MfaDecision#DIRECT_LOGIN} 兜底放行。MFA 是叠加层，不应把异常 principal 升级
+     *       为 500；如果有其他主体类型走到 console form login（理论上不会），让原链路自然拒绝。
+     *   <li>判定依据用 {@link AdministratorMfaService#loadActiveCipher(String)} 的 nullability，
+     *       而不是 {@code mfa_enabled} 标志位。{@code mfa_enabled=true} 但 cipher 缺失（admin reset
+     *       后的边界态）下走 challenge 会让用户卡死，不如直接放行让其重新绑定。
+     *   <li><b>永远不返回 {@link MfaDecision#SETUP_REQUIRED}</b>—— 管理员 MFA 自愿，org-level
+     *       enforcement 仅对 portal 用户生效（Phase 4）。
+     * </ul>
+     */
+    @Bean
+    public MfaTriggerStrategy consoleMfaTriggerStrategy(AdministratorMfaService administratorMfaService) {
+        return authentication -> {
+            if (authentication == null
+                || !(authentication.getPrincipal() instanceof UserDetails userDetails)) {
+                return MfaDecision.DIRECT_LOGIN;
+            }
+            UserType userType = userDetails.getUserType();
+            if (userType == null || !UserType.ADMIN.getType().equals(userType.getType())) {
+                return MfaDecision.DIRECT_LOGIN;
+            }
+            String userId = userDetails.getId();
+            if (userId == null) {
+                return MfaDecision.DIRECT_LOGIN;
+            }
+            return administratorMfaService.loadActiveCipher(userId) != null
+                ? MfaDecision.CHALLENGE_REQUIRED
+                : MfaDecision.DIRECT_LOGIN;
+        };
     }
 
     /**

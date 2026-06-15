@@ -55,7 +55,7 @@ public class AdministratorMfaService extends AbstractMfaService {
     }
 
     @Override
-    protected String subjectType() {
+    public String subjectType() {
         return "admin";
     }
 

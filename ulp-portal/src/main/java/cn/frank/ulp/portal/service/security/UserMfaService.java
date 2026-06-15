@@ -58,7 +58,7 @@ public class UserMfaService extends AbstractMfaService {
     }
 
     @Override
-    protected String subjectType() {
+    public String subjectType() {
         return "user";
     }
 

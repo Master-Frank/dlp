@@ -114,12 +114,19 @@ public abstract class AbstractMfaService implements MfaService {
         persistDisabled(userId);
     }
 
+    @Override
+    public String loadActiveCipher(String userId) {
+        Objects.requireNonNull(userId, "userId");
+        return loadCipher(userId);
+    }
+
     protected String stagingKey(String userId) {
         return STAGING_KEY_PREFIX + subjectType() + ":" + userId;
     }
 
     /** {@code "admin"} or {@code "user"} — namespaces Redis staging key. */
-    protected abstract String subjectType();
+    @Override
+    public abstract String subjectType();
 
     /** Throws {@link BadParamsException} if the subject does not exist. */
     protected abstract String loadUsername(String userId);

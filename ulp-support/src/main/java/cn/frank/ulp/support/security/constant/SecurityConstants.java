@@ -60,4 +60,30 @@ public class SecurityConstants {
     * 未知认证类型
     */
     public static final String UNKNOWN_AUTHENTICATION_TYPE   = "unknown_authentication_type";
+
+    /**
+    * MFA 第二因子挑战中标识：成功响应附带此 status，前端据此跳 {@link #MFA_CHALLENGE_PATH}。
+    */
+    public static final String MFA_REQUIRED                  = "mfa_required";
+
+    /**
+    * MFA 第二因子挑战页路径（前端路由 + 302 跳转目标）。
+    */
+    public static final String MFA_CHALLENGE_PATH            = "/mfa/challenge";
+
+    /**
+    * MFA 待挑战 Cookie 名：HttpOnly + Secure + SameSite=Strict + Path=/，5min TTL，
+    * 内容为 {@code ULP_MFA_PENDING:{uuid}} 中的 UUID。
+    */
+    public static final String MFA_PENDING_COOKIE            = "ulp-mfa-pending";
+
+    /**
+    * 组织强制 MFA 但用户未绑定，需要先去 setup 标识。Phase 4 portal 使用，console 不会触发。
+    */
+    public static final String MFA_SETUP_REQUIRED            = "mfa_setup_required";
+
+    /**
+    * MFA setup 页路径。
+    */
+    public static final String MFA_SETUP_PATH                = "/mfa/setup";
 }

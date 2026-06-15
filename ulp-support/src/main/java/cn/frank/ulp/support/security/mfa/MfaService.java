@@ -76,4 +76,21 @@ public interface MfaService {
      * @throws IllegalStateException if MFA is not currently enabled for the subject
      */
     void unbind(String userId, String currentOtp);
+
+    /**
+     * Subject-type discriminator used to route {@link MfaService} beans to the right
+     * principal: {@code "admin"} for {@code ulp_administrator}, {@code "user"} for
+     * {@code ulp_user}. Must align with the {@code UserType.getType()} value so callers
+     * can map {@code Authentication.principal.userType.type → MfaService} via
+     * dependency-injected {@link java.util.Collection}.
+     */
+    String subjectType();
+
+    /**
+     * Return the encrypted TOTP secret currently bound to this subject, or {@code null}
+     * when the subject has not enabled MFA. Used by the challenge-verification path to
+     * decrypt the secret and validate the submitted OTP without going through the bind
+     * lifecycle.
+     */
+    String loadActiveCipher(String userId);
 }
