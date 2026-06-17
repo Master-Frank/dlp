@@ -17,6 +17,7 @@
 package cn.frank.ulp.portal.configuration.security;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.beans.factory.BeanClassLoaderAware;
@@ -26,6 +27,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.http.HttpMethod;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -41,6 +45,7 @@ import org.springframework.security.core.userdetails.UserDetailsPasswordService;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
@@ -63,6 +68,7 @@ import cn.frank.ulp.authentication.wechat.configurer.WeChatAuthenticationConfigu
 import cn.frank.ulp.authentication.wechatwork.configurer.WeChatWorkAuthenticationConfigurer;
 import cn.frank.ulp.common.repository.account.UserRepository;
 import cn.frank.ulp.common.repository.setting.SettingRepository;
+import cn.frank.ulp.common.security.mfa.OrgMfaPolicyService;
 import cn.frank.ulp.core.message.mail.MailMsgEventPublish;
 import cn.frank.ulp.core.message.sms.SmsMsgEventPublish;
 import cn.frank.ulp.core.security.otp.OtpContextHelp;
@@ -72,9 +78,22 @@ import cn.frank.ulp.core.security.password.task.impl.PasswordExpireWarnTask;
 import cn.frank.ulp.core.security.task.UserExpireLockTask;
 import cn.frank.ulp.core.security.task.UserUnlockTask;
 import cn.frank.ulp.portal.authentication.*;
+import cn.frank.ulp.portal.security.mfa.OrgMfaEnforcementFilter;
+import cn.frank.ulp.portal.service.security.UserMfaService;
 import cn.frank.ulp.support.geo.GeoLocationParser;
 import cn.frank.ulp.support.security.authentication.WebAuthenticationDetailsSource;
 import cn.frank.ulp.support.security.configurer.FormLoginConfigurer;
+import cn.frank.ulp.support.security.mfa.MfaAwareAuthenticationSuccessHandler;
+import cn.frank.ulp.support.security.mfa.MfaChallengeService;
+import cn.frank.ulp.support.security.mfa.MfaCodeVerifier;
+import cn.frank.ulp.support.security.mfa.MfaDecision;
+import cn.frank.ulp.support.security.mfa.MfaLockoutService;
+import cn.frank.ulp.support.security.mfa.MfaPendingAuthenticationStore;
+import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
+import cn.frank.ulp.support.security.mfa.MfaService;
+import cn.frank.ulp.support.security.mfa.MfaTriggerStrategy;
+import cn.frank.ulp.support.security.userdetails.UserDetails;
+import cn.frank.ulp.support.security.userdetails.UserType;
 import cn.frank.ulp.support.web.useragent.UserAgentParser;
 import static org.springframework.http.HttpMethod.*;
 import static org.springframework.security.config.Customizer.withDefaults;
@@ -265,7 +284,11 @@ public class PortalSecurityConfiguration extends AbstractSecurityConfiguration
     @Bean(name = DEFAULT_SECURITY_FILTER_CHAIN)
     @DependsOn({ IDP_SECURITY_FILTER_CHAIN, OIDC_PROTOCOL_SECURITY_FILTER_CHAIN,
                  FORM_PROTOCOL_SECURITY_FILTER_CHAIN, JWT_PROTOCOL_SECURITY_FILTER_CHAIN })
-    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,
+                                                   MfaTriggerStrategy mfaTriggerStrategy,
+                                                   MfaPendingAuthenticationStore mfaPendingStore,
+                                                   UserMfaService userMfaService,
+                                                   OrgMfaPolicyService orgMfaPolicyService) throws Exception {
         // @formatter:off
         WebAuthenticationDetailsSource authenticationDetailsSource = getAuthenticationDetailsSource(httpSecurity);
         AuthenticationSuccessHandler successHandler = new PortalAuthenticationSuccessHandler(userRepository,auditEventPublish);
@@ -294,7 +317,9 @@ public class PortalSecurityConfiguration extends AbstractSecurityConfiguration
                 .logout(withLogoutConfigurerDefaults())
                 //会话管理器
                 .sessionManagement(withSessionManagementConfigurerDefaults())
-                .with(withFormLoginConfigurer(),configurer-> {});
+                .addFilterBefore(new OrgMfaEnforcementFilter(userMfaService, orgMfaPolicyService),
+                    AuthorizationFilter.class)
+                .with(withFormLoginConfigurer(mfaTriggerStrategy, mfaPendingStore),configurer-> {});
         //邮件验证码登录认证
         MailOtpAuthenticationConfigurer mailOtpAuthenticationConfigurer = mailOtp(userRepository, userDetailsService, otpContextHelp)
                 .successHandler(successHandler)
@@ -331,6 +356,10 @@ public class PortalSecurityConfiguration extends AbstractSecurityConfiguration
             registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, ACCOUNT_PATH + PREPARE_FORGET_PASSWORD)).permitAll();
             registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.GET, ACCOUNT_PATH + FORGET_PASSWORD_CODE)).permitAll();
             registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.PUT, ACCOUNT_PATH + FORGET_PASSWORD)).permitAll();
+            // MFA 第二因子端点处于"已主认证、未二次"中间态：MfaAwareAuthenticationSuccessHandler
+            // 已经把 SecurityContext 从 session 清空，anyRequest().authenticated() 会拒绝。必须显式放行；
+            // 安全性由 cookie 一次性 UUID + 5min TTL + Redis pending /24 IP 绑定共同兜底。
+            registry.requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/api/v1/mfa/challenge")).permitAll();
             registry.anyRequest().authenticated();
         };
     }
@@ -371,15 +400,24 @@ public class PortalSecurityConfiguration extends AbstractSecurityConfiguration
     }
 
     /**
-     * 表单登录
+     * 表单登录。
      *
-     * @return {@link FormLoginConfigurer}
+     * <p>登录成功后由 {@link MfaAwareAuthenticationSuccessHandler} 在
+     * {@link PortalAuthenticationSuccessHandler} 之前做 MFA 三分支判定：未绑且组织未强制
+     * 直接走原 handler 提交 session；已绑则把 Authentication 暂存到 Redis 并下发
+     * {@code mfa_required} + cookie；未绑且组织强制则提交 session 后下发
+     * {@code mfa_setup_required}，等前端跳 {@code /mfa/setup}。
+     *
+     * <p>策略 bean 由 {@link #portalMfaTriggerStrategy(UserMfaService, OrgMfaPolicyService)}
+     * 提供——只对 {@code userType=user} 的 principal 生效，admin / 其他类型一律直放。
      */
-    public FormLoginConfigurer<HttpSecurity> withFormLoginConfigurer() {
+    public FormLoginConfigurer<HttpSecurity> withFormLoginConfigurer(MfaTriggerStrategy mfaTriggerStrategy,
+                                                                     MfaPendingAuthenticationStore mfaPendingStore) {
         // @formatter:off
-        AuthenticationSuccessHandler successHandler = new PortalAuthenticationSuccessHandler(userRepository,  auditEventPublish );
+        AuthenticationSuccessHandler delegateSuccess = new PortalAuthenticationSuccessHandler(userRepository,  auditEventPublish );
+        AuthenticationSuccessHandler mfaAware = new MfaAwareAuthenticationSuccessHandler(delegateSuccess, mfaTriggerStrategy, mfaPendingStore);
         FormLoginConfigurer<HttpSecurity> configurer=new FormLoginConfigurer<>();
-        configurer.successHandler(successHandler)
+        configurer.successHandler(mfaAware)
                 .failureHandler(new PortalAuthenticationFailureHandler());
         return configurer;
         // @formatter:on
@@ -534,6 +572,84 @@ public class PortalSecurityConfiguration extends AbstractSecurityConfiguration
         provider.setPasswordEncoder(passwordEncoder);
         provider.setUserDetailsPasswordService(userDetailsPasswordService);
         return provider;
+    }
+
+    /**
+     * Redis-backed pending-challenge store。复用 PortalSessionConfiguration 已声明的
+     * {@code springSessionDefaultRedisSerializer}（Jackson 3 + AuthenticationJacksonModule）
+     * 做序列化——保证 pending Authentication 的 round-trip 与 Spring Session 写入 live
+     * session 完全一致 schema。
+     */
+    @Bean
+    public MfaPendingAuthenticationStore mfaPendingAuthenticationStore(RedisConnectionFactory connectionFactory,
+                                                                       RedisSerializer<Object> springSessionDefaultRedisSerializer) {
+        return new MfaPendingAuthenticationStore(connectionFactory,
+            springSessionDefaultRedisSerializer);
+    }
+
+    /**
+     * Brute-force throttle for MFA challenge：默认 5 次失败 / 15 分钟窗口，counter 写在
+     * {@code ULP_MFA_FAIL:user:{userId}}。阈值对齐 spec.md，未来灰度可通过
+     * {@code @ConfigurationProperties} 抽出。
+     */
+    @Bean
+    public MfaLockoutService mfaLockoutService(StringRedisTemplate redisTemplate) {
+        return new MfaLockoutService(redisTemplate);
+    }
+
+    /**
+     * 第二因子 verify-and-commit 引擎。{@link Collection} 注入会自动包含所有
+     * {@link MfaService} bean —— portal 当前只有 {@link UserMfaService}，未来若新增
+     * 其他 subject 类型，新 bean 注册即可，本配置无需改动。
+     */
+    @Bean
+    public MfaChallengeService mfaChallengeService(MfaPendingAuthenticationStore mfaPendingStore,
+                                                   MfaLockoutService mfaLockoutService,
+                                                   MfaCodeVerifier codeVerifier,
+                                                   MfaSecretCipher secretCipher,
+                                                   Collection<MfaService> mfaServices) {
+        return new MfaChallengeService(mfaPendingStore, mfaLockoutService, codeVerifier,
+            secretCipher, mfaServices);
+    }
+
+    /**
+     * Portal 侧 MFA 触发策略：三分支判定，仅对 {@code userType=user} 的 principal 生效。
+     *
+     * <ul>
+     *   <li>已绑定（{@code loadActiveCipher != null}） → {@link MfaDecision#CHALLENGE_REQUIRED}：
+     *       走 TOTP / 备份码二次验证流。
+     *   <li>未绑定 + 组织开启 {@code mfa_enforced} → {@link MfaDecision#SETUP_REQUIRED}：
+     *       提交 session 但同时下发 {@code mfa_setup_required}，前端跳 {@code /mfa/setup}。
+     *   <li>未绑定 + 组织未强制 → {@link MfaDecision#DIRECT_LOGIN}：自愿模式，直接登录。
+     * </ul>
+     *
+     * <p>非 user principal（admin / 缺 id / 不是 {@link UserDetails}）一律
+     * {@link MfaDecision#DIRECT_LOGIN} 兜底放行 —— org-level enforcement 与 admin 无关；
+     * MFA 是叠加层，不应把异常 principal 升级为 500。
+     */
+    @Bean
+    public MfaTriggerStrategy portalMfaTriggerStrategy(UserMfaService userMfaService,
+                                                       OrgMfaPolicyService orgMfaPolicyService) {
+        return authentication -> {
+            if (authentication == null
+                || !(authentication.getPrincipal() instanceof UserDetails userDetails)) {
+                return MfaDecision.DIRECT_LOGIN;
+            }
+            UserType userType = userDetails.getUserType();
+            if (userType == null || !UserType.USER.getType().equals(userType.getType())) {
+                return MfaDecision.DIRECT_LOGIN;
+            }
+            String userId = userDetails.getId();
+            if (userId == null || userId.isBlank()) {
+                return MfaDecision.DIRECT_LOGIN;
+            }
+            String cipher = userMfaService.loadActiveCipher(userId);
+            if (cipher != null) {
+                return MfaDecision.CHALLENGE_REQUIRED;
+            }
+            return orgMfaPolicyService.isUserEnforced(userId) ? MfaDecision.SETUP_REQUIRED
+                : MfaDecision.DIRECT_LOGIN;
+        };
     }
 
 }

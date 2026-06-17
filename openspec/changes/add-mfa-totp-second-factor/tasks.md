@@ -36,22 +36,22 @@
 
 ## 3. Console form login MFA challenge gate
 
-- [ ] 3.1 `ulp-support` 写 `MfaAwareAuthenticationSuccessHandler`（包装 `SimpleUrlAuthenticationSuccessHandler`）：成功后按用户类型分支：admin 只查 `mfa_enabled`（true → 暂存 Authentication 到 Redis + 下发 cookie + 302 `/mfa/challenge` 或 200 JSON；false → 直接登录）；user 路径放在 ulp-portal 注入（见 Phase 4），ulp-console 装配实例只走 admin 分支
-- [ ] 3.2 暂存 Redis key = `ULP_MFA_PENDING:{uuid}` TTL 5 min；Authentication 用 Jackson 3 序列化（沿用 `RedisOAuth2AuthorizationService` 模式）
-- [ ] 3.3 `ulp-support` 写 `MfaChallengeService`：`verifyAndCommit(uuid, code, sourceIp)` 实现读 Redis pending → 验证 TOTP / 备份码 → 校验源 IP `/24` 同段 → 成功提交 Authentication 到 `SecurityContextHolder` + Spring Session
-- [ ] 3.4 `MfaChallengeService` 集成失败计数器（`ULP_MFA_FAIL:{userType}:{userId}` Redis key，TTL 15 min，达 5 锁定）；锁定期间返回 `423 Locked` + `Retry-After` header
-- [ ] 3.5 `ulp-console` 写 `MfaChallengeController` 提供 `POST /api/v1/mfa/challenge` 接 `{ code }` 或 `{ backupCode }`
-- [ ] 3.6 改 `ConsoleSecurityConfiguration`：注入 admin 分支的 `MfaAwareAuthenticationSuccessHandler` 替换原 success handler（ulp-console **不注册** `OrgMfaEnforcementFilter`，admin 不参与组织强制）
-- [ ] 3.7 集成测试 `ConsoleMfaChallengeLoginIT`：admin 未绑 MFA 直接登录（无 setup 强拉）/ admin 自愿绑定后下次登录走 challenge / challenge 成功后正常访问 / challenge 失败 5 次锁定 4 场景
+- [x] 3.1 `ulp-support` 写 `MfaAwareAuthenticationSuccessHandler`（包装 `SimpleUrlAuthenticationSuccessHandler`）：成功后按用户类型分支：admin 只查 `mfa_enabled`（true → 暂存 Authentication 到 Redis + 下发 cookie + 302 `/mfa/challenge` 或 200 JSON；false → 直接登录）；user 路径放在 ulp-portal 注入（见 Phase 4），ulp-console 装配实例只走 admin 分支
+- [x] 3.2 暂存 Redis key = `ULP_MFA_PENDING:{uuid}` TTL 5 min；Authentication 用 Jackson 3 序列化（沿用 `RedisOAuth2AuthorizationService` 模式）
+- [x] 3.3 `ulp-support` 写 `MfaChallengeService`：`verifyAndCommit(uuid, code, sourceIp)` 实现读 Redis pending → 验证 TOTP / 备份码 → 校验源 IP `/24` 同段 → 成功提交 Authentication 到 `SecurityContextHolder` + Spring Session
+- [x] 3.4 `MfaChallengeService` 集成失败计数器（`ULP_MFA_FAIL:{userType}:{userId}` Redis key，TTL 15 min，达 5 锁定）；锁定期间返回 `423 Locked` + `Retry-After` header
+- [x] 3.5 `ulp-console` 写 `MfaChallengeController` 提供 `POST /api/v1/mfa/challenge` 接 `{ code }` 或 `{ backupCode }`（backup-code 路径为 Phase 5 占位，目前直接返回 `invalid_backup_code`）
+- [x] 3.6 改 `ConsoleSecurityConfiguration`：注入 admin 分支的 `MfaAwareAuthenticationSuccessHandler` 替换原 success handler（ulp-console **不注册** `OrgMfaEnforcementFilter`，admin 不参与组织强制）
+- [x] 3.7 集成测试 `ConsoleMfaChallengeLoginIT`：admin 未绑 MFA 直接登录（无 setup 强拉）/ admin 自愿绑定后下次登录走 challenge / challenge 成功后正常访问 / challenge 失败 5 次锁定 4 场景（4/4 通过 34.7s）
 
 ## 4. Portal form login MFA challenge gate + 组织强制
 
-- [ ] 4.1 `ulp-portal` 写 `OrgMfaEnforcementFilter`：在 `SecurityContextPersistenceFilter` 之后、`FilterSecurityInterceptor` 之前；对已认证 user 请求（`Authentication.isAuthenticated()=true` 且 principal 是 `ulp_user`），若 `mfa_enabled=false` 且 `OrgMfaPolicyService.isUserEnforced(userId)=true`，且请求路径不在白名单（`/api/v1/mfa/bind/**`、`/mfa/setup`、`/logout`、静态资源、`/error`），返回 403 + JSON `{"error":"mfa_setup_required","reason":"org_policy"}`
-- [ ] 4.2 改 `MfaAwareAuthenticationSuccessHandler` user 分支：`mfa_enabled=true` → 走 challenge；`mfa_enabled=false` 且 `isUserEnforced=true` → 直接登录（提交 Authentication）但返回 302 → `/mfa/setup` 或 200 + `{"mfa_setup_required":true,"reason":"org_policy"}`；`mfa_enabled=false` 且 `isUserEnforced=false` → 直接登录路径不变
-- [ ] 4.3 改 `PortalSecurityConfiguration`：注入 user 分支的 `MfaAwareAuthenticationSuccessHandler`；注册 `OrgMfaEnforcementFilter`
-- [ ] 4.4 `ulp-portal` 写 `MfaChallengeController`（复用 `MfaChallengeService`）
-- [ ] 4.5 集成测试 `PortalMfaChallengeLoginIT`：自愿 user 未绑登录路径不变 / 自愿 user 绑后 challenge / 自愿 user challenge 成功访问主页 4 场景
-- [ ] 4.6 集成测试 `PortalOrgMfaEnforcementIT`：被强制 user 首次登录 302 `/mfa/setup` / 访问其他路径 403 `mfa_setup_required` / 完成绑定后访问正常 / 关闭 org 强制位后无强拉 4 场景
+- [x] 4.1 `ulp-portal` 写 `OrgMfaEnforcementFilter`：在 `SecurityContextPersistenceFilter` 之后、`FilterSecurityInterceptor` 之前；对已认证 user 请求（`Authentication.isAuthenticated()=true` 且 principal 是 `ulp_user`），若 `mfa_enabled=false` 且 `OrgMfaPolicyService.isUserEnforced(userId)=true`，且请求路径不在白名单（`/api/v1/mfa/bind/**`、`/mfa/setup`、`/logout`、静态资源、`/error`），返回 403 + JSON `{"error":"mfa_setup_required","reason":"org_policy"}`
+- [x] 4.2 改 `MfaAwareAuthenticationSuccessHandler` user 分支：`mfa_enabled=true` → 走 challenge；`mfa_enabled=false` 且 `isUserEnforced=true` → 直接登录（提交 Authentication）但返回 302 → `/mfa/setup` 或 200 + `{"mfa_setup_required":true,"reason":"org_policy"}`；`mfa_enabled=false` 且 `isUserEnforced=false` → 直接登录路径不变（实现走 200 JSON 路径，无 302；前端按 `mfa_setup_required` 标志位决定是否跳 `/mfa/setup`）
+- [x] 4.3 改 `PortalSecurityConfiguration`：注入 user 分支的 `MfaAwareAuthenticationSuccessHandler`；注册 `OrgMfaEnforcementFilter`（4 个 MFA `@Bean` 全部对齐 console 模式：`mfaPendingAuthenticationStore` 复用 `springSessionDefaultRedisSerializer`、`mfaLockoutService`、`mfaChallengeService(Collection<MfaService>)`、`portalMfaTriggerStrategy` 三分支判定）
+- [x] 4.4 `ulp-portal` 写 `MfaChallengeController`（复用 `MfaChallengeService`，结构与 console 版本完全对齐；端点放行靠 `PortalSecurityConfiguration#withHttpAuthorizeRequests` 的 `/api/v1/mfa/challenge` permitAll 条目）
+- [x] 4.5 集成测试 `PortalMfaChallengeLoginIT`：自愿 user 未绑登录路径不变 / 自愿 user 绑后 challenge / 自愿 user challenge 成功访问主页 / 自愿 user challenge 5 次失败锁定 4 场景（4/4 通过 39.78s；继承 console 同款 `@Transactional(NOT_SUPPORTED)` 解 `UserServiceImpl#findByUsernameOrPhoneOrEmail` 的 `CompletableFuture.supplyAsync` 跨线程事务可见性问题。username 压短到 `p-mfa-{no,on,ok,lk}-<nanoTime>` 以适配 `ulp_user.email_` VARCHAR(50)）
+- [x] 4.6 集成测试 `PortalOrgMfaEnforcementIT`：被强制 user 首次登录 200 `mfa_setup_required` + `setup_path=/mfa/setup`（spec 原写 302 → 落地为 200 JSON，SPA 按 status 跳；前端无需后端 Location）/ 访问 `/api/v1/session/current_user` 403 `mfa_setup_required` / 完成绑定后访问不再 403 / 关闭 org 强制位后无强拉 4 场景（4/4 通过 39.55s；调试中发现的关键坑：portal 依赖 ulp-support jar 而非 source，改 `MfaAwareAuthenticationSuccessHandler` 后必须先 `./mvnw -pl ulp-support install` 才能让 portal verify 看到新字节码，否则诊断日志 / 行为变更全部"看不见"——这是本仓 phase 2.9 同款坑的复现）
 
 ## 5. 备份码 + 失败锁定 + ROPC 拒签
 

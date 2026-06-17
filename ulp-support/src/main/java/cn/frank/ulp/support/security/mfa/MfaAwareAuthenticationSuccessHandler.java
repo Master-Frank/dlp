@@ -55,10 +55,11 @@ import jakarta.servlet.http.HttpServletResponse;
  *       — silently dropping the delegate is not enough), an {@code HttpOnly Secure
  *       SameSite=Strict} cookie carrying the UUID is set, and a JSON body announcing
  *       {@code mfa_required} + {@code challenge_id} is flushed.
- *   <li>{@link MfaDecision#SETUP_REQUIRED} — Phase 4 portal-only path. Console strategies
- *       MUST never emit this; if they do (programming error), we fall back to delegate +
- *       attach the {@code mfa_setup_required} status so the response is at least
- *       interpretable client-side.
+ *   <li>{@link MfaDecision#SETUP_REQUIRED} — Phase 4 portal-only path. The
+ *       {@link Authentication} is committed to the session (so the SPA can hit
+ *       {@code /mfa/setup} and the bind endpoints without re-doing primary auth), then a
+ *       JSON body announcing {@code mfa_setup_required} + {@code reason=org_policy} is
+ *       flushed. Console strategies MUST never emit this.
  * </ul>
  *
  * <p>The handler is deployable-agnostic — both console and portal SecurityConfigurations
@@ -127,12 +128,22 @@ public class MfaAwareAuthenticationSuccessHandler implements AuthenticationSucce
     }
 
     private void requireSetup(HttpServletRequest request, HttpServletResponse response,
-                              Authentication authentication) throws IOException, ServletException {
-        // Portal-only branch (Phase 4). Falling through to delegate keeps the session
-        // authenticated so the user can reach /mfa/setup; the org-enforcement filter
-        // gates every other path. Console strategies MUST NOT return SETUP_REQUIRED — if
-        // they do (programming error), this is still a correct best-effort.
-        delegate.onAuthenticationSuccess(request, response, authentication);
+                              Authentication authentication) {
+        // Portal-only branch (Phase 4). Commit the Authentication so the SPA can reach
+        // /mfa/setup and the /api/v1/mfa/bind/** endpoints without re-doing primary auth;
+        // OrgMfaEnforcementFilter then gates every other path until mfa_enabled flips true.
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, request, response);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("mfa_setup_required", true);
+        payload.put("reason", "org_policy");
+        payload.put("setup_path", SecurityConstants.MFA_SETUP_PATH);
+        HttpResponseUtils.flushResponseJson(response, HttpStatus.OK.value(),
+            ApiRestResult.<Map<String, Object>> builder().result(payload)
+                .status(SecurityConstants.MFA_SETUP_REQUIRED).build());
     }
 
     private Cookie buildPendingCookie(HttpServletRequest request, String challengeId) {
