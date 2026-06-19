@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -44,10 +45,7 @@ import cn.frank.ulp.support.security.mfa.MfaSecretGenerator;
 import cn.frank.ulp.support.security.userdetails.Application;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
-
-import dev.samstevens.totp.code.DefaultCodeGenerator;
-import dev.samstevens.totp.code.HashingAlgorithm;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -63,7 +61,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * — 组织强制位仅对 end-user 生效，admin 永远自愿。
  */
 @ActiveProfiles("test")
-class MfaAdminUnbindIT extends AbstractIntegrationTest {
+class MfaAdminUnbindIT extends AbstractMfaIntegrationTest {
 
     private static final String        UNBIND_PATH   = "/api/v1/mfa/unbind";
 
@@ -82,8 +80,21 @@ class MfaAdminUnbindIT extends AbstractIntegrationTest {
     @Autowired
     private PasswordEncoder            passwordEncoder;
 
-    private final DefaultCodeGenerator totpGenerator = new DefaultCodeGenerator(
-        HashingAlgorithm.SHA1);
+    /**
+     * 跟踪每个测试方法 seed 的 adminId —— @AfterEach 用它清 Redis 三类 MFA key
+     * （pending / fail counter / bind secret）。本测试只走 success 路径不会写
+     * {@code ULP_MFA_FAIL:admin:{id}}，但 spec Phase 8.3 要求 MFA IT 强制 Redis 清理契约，
+     * 加 defensive cleanup 防止后续场景扩展时漏掉。
+     */
+    private String                     seededAdminId;
+
+    @AfterEach
+    void cleanupMfaRedisKeys() {
+        if (seededAdminId != null) {
+            cleanMfaRedisKeys("admin", seededAdminId);
+            seededAdminId = null;
+        }
+    }
 
     @Test
     void unbind_withValidOtp_clearsAllMfaFields() throws Exception {
@@ -107,10 +118,10 @@ class MfaAdminUnbindIT extends AbstractIntegrationTest {
         admin.setTotpSecretCipher(cipher);
         admin.setBackupCodesJson(backupCodesJson);
         String adminId = administratorRepository.saveAndFlush(admin).getId();
+        seededAdminId = adminId;
 
         // 算当前窗口 OTP
-        long counter = System.currentTimeMillis() / 1000L / 30L;
-        String otp = totpGenerator.generate(secretBase32, counter);
+        String otp = computeTotp(secretBase32);
 
         String body = "{\"currentOtp\":\"" + otp + "\"}";
         mockMvc

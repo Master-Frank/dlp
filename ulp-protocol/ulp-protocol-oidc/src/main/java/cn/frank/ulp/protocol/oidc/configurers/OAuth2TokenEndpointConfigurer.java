@@ -58,6 +58,7 @@ import cn.frank.ulp.protocol.oidc.authentication.OAuth2AuthorizationCodeAuthenti
 import cn.frank.ulp.protocol.oidc.authentication.OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvider;
 import cn.frank.ulp.protocol.oidc.authentication.OAuth2RefreshTokenAuthenticationProvider;
 import cn.frank.ulp.protocol.oidc.endpoint.authentication.OAuth2AuthorizationResourceOwnerPasswordAuthenticationConverter;
+import cn.frank.ulp.support.security.mfa.MfaStatusLookup;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -142,11 +143,13 @@ public final class OAuth2TokenEndpointConfigurer extends AbstractConfigurer {
         // ROPC 密码升级支持：bean 可缺省（OIDC 也可能不接 portal 的 password service），缺省时退化为基础构造行为
         UserDetailsPasswordService userDetailsPasswordService = getOptionalBean(httpSecurity,
             UserDetailsPasswordService.class);
+        // MFA 拒绝支持：bean 可缺省（OIDC 也可能跑在没接入 MFA 的部署里），缺省时 ROPC 不感知 MFA
+        MfaStatusLookup mfaStatusLookup = getOptionalBean(httpSecurity, MfaStatusLookup.class);
 
         //密码模式认证提供商
         OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvider auth2AuthorizationPasswordAuthenticationProvider = new OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvider(
             userDetailsService, authorizationService, tokenGenerator, passwordEncoder,
-            userDetailsPasswordService);
+            userDetailsPasswordService, mfaStatusLookup);
         if (sessionRegistry != null) {
             auth2AuthorizationPasswordAuthenticationProvider.setSessionRegistry(sessionRegistry);
         }

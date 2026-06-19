@@ -21,6 +21,7 @@ import { Menu } from 'antd';
 import type { ItemType } from 'antd/es/menu/hooks/useItems';
 import { useLayoutEffect, useRef, useState } from 'react';
 import BaseView from './components/Base';
+import MfaView from './components/MFA';
 import SecurityView from './components/Security';
 import { AccountSettingsStateKey } from './data.d';
 import classnames from 'classnames';
@@ -71,6 +72,12 @@ const AccountSettings = () => {
         id: 'page.user.profile.menu.security',
       }),
     },
+    {
+      key: AccountSettingsStateKey.mfa,
+      label: intl.formatMessage({
+        id: 'page.user.profile.menu.mfa',
+      }),
+    },
   ];
 
   const dom = useRef<HTMLDivElement>();
@@ -109,6 +116,8 @@ const AccountSettings = () => {
         return <BaseView />;
       case AccountSettingsStateKey.security:
         return <SecurityView />;
+      case AccountSettingsStateKey.mfa:
+        return <MfaView />;
       default:
         return null;
     }

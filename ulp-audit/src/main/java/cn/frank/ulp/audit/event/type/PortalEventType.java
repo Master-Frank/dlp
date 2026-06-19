@@ -77,7 +77,7 @@ public class PortalEventType {
     /**
      * 绑定MFA
      */
-    public static Type BIND_MFA                = new Type("ulp:event:account:bind_maf", "绑定 MFA",
+    public static Type BIND_MFA                = new Type("ulp:event:account:bind_mfa", "绑定 MFA",
         MY_ACCOUNT_RESOURCE, List.of(UserType.USER));
 
     /**
@@ -108,8 +108,39 @@ public class PortalEventType {
     /**
      * 解绑mfa
      */
-    public static Type UNBIND_MFA              = new Type("ulp:event:account:unbind_maf", "解绑 MFA",
+    public static Type UNBIND_MFA              = new Type("ulp:event:account:unbind_mfa", "解绑 MFA",
         MY_ACCOUNT_RESOURCE, List.of(UserType.USER));
+
+    /**
+     * MFA 二次验证已要求（成功登录主因子后进入 challenge 流）
+     */
+    public static Type MFA_CHALLENGE_REQUIRED  = new Type(
+        "ulp:event:account:mfa_challenge_required", "MFA 二次验证已要求", MY_ACCOUNT_RESOURCE,
+        List.of(UserType.USER));
+
+    /**
+     * MFA 二次验证成功
+     */
+    public static Type MFA_VERIFY_SUCCESS      = new Type("ulp:event:account:mfa_verify_success",
+        "MFA 二次验证成功", MY_ACCOUNT_RESOURCE, List.of(UserType.USER));
+
+    /**
+     * MFA 二次验证失败
+     */
+    public static Type MFA_VERIFY_FAILURE      = new Type("ulp:event:account:mfa_verify_failure",
+        "MFA 二次验证失败", MY_ACCOUNT_RESOURCE, List.of(UserType.USER));
+
+    /**
+     * 备份码已消费
+     */
+    public static Type BACKUP_CODE_USED        = new Type("ulp:event:account:backup_code_used",
+        "MFA 备份码已消费", MY_ACCOUNT_RESOURCE, List.of(UserType.USER));
+
+    /**
+     * MFA 锁定（连续失败触发）
+     */
+    public static Type MFA_LOCKED_OUT          = new Type("ulp:event:account:mfa_locked_out",
+        "MFA 已锁定", MY_ACCOUNT_RESOURCE, List.of(UserType.USER));
 
     /**
      * 登录门户

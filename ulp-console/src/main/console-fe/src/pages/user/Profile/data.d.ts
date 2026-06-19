@@ -41,4 +41,5 @@ export interface GetBoundIdpList {
 export enum AccountSettingsStateKey {
   base = 'base',
   security = 'security',
+  mfa = 'mfa',
 }

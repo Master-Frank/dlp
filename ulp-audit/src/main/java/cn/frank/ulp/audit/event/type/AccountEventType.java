@@ -206,4 +206,18 @@ public class AccountEventType {
         "ulp:event:account:identity_resource_sync", "身份源同步", IDENTITY_SOURCE_RESOURCE,
         List.of(ADMIN));
 
+    /**
+     * 管理员重置 MFA（target 可以是 user 或 admin）
+     */
+    public static Type ADMIN_RESET_USER_MFA                  = new Type(
+        "ulp:event:account:admin_reset_user_mfa", "管理员重置 MFA", ORG_ACCOUNT_RESOURCE,
+        List.of(ADMIN));
+
+    /**
+     * 组织强制 MFA 策略变更
+     */
+    public static Type ORG_MFA_POLICY_CHANGED                = new Type(
+        "ulp:event:account:org_mfa_policy_changed", "组织强制 MFA 策略变更", ORG_ACCOUNT_RESOURCE,
+        List.of(ADMIN));
+
 }

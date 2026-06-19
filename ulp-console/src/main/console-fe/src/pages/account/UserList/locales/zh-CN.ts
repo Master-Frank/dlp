@@ -137,4 +137,9 @@ export default {
   'pages.account.user_list.organization.form.code.placeholder': '请输入组织代码',
   'pages.account.user_list.organization.form.order': '排序',
   'pages.account.user_list.organization.form.desc': '描述',
+  'pages.account.user_list.organization.form.mfa_enforced': '强制 MFA',
+  'pages.account.user_list.organization.form.mfa_enforced.tooltip':
+    '开启后，本组织下的成员登录时必须绑定并通过二次验证（TOTP）才能进入系统。',
+  'pages.account.user_list.organization.form.mfa_enforced.enabled': '已开启该组织的强制 MFA 策略',
+  'pages.account.user_list.organization.form.mfa_enforced.disabled': '已关闭该组织的强制 MFA 策略',
 };

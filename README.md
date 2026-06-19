@@ -143,6 +143,70 @@ echo "testcontainers.reuse.enable=true" >> ~/.testcontainers.properties
 
 然后写一个 `XxxControllerIT extends AbstractIntegrationTest` 即可，容器与 Spring Boot 测试上下文都由基类托管。
 
+## MFA 部署前置
+
+启用 TOTP 第二因子前，三个部署单元（`ulp-console` / `ulp-portal` / `ulp-openapi`）都需要注入同一把 **KEK**（Key Encryption Key），用于 AES-256-GCM 加密 `ulp_user.totp_secret_cipher` / `ulp_administrator.totp_secret_cipher`。KEK 缺失、长度不对、非合法 Base64 都会让 `MfaSecretCipher.validateKek()` 在 `@PostConstruct` 阶段抛 `IllegalStateException`，应用启动直接失败 —— 这是有意为之的 fail-fast。
+
+### KEK 生成
+
+```bash
+# Linux / macOS / WSL / Git Bash
+openssl rand -base64 32
+
+# Windows PowerShell（无 openssl 时）
+[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+输出形如 `aB3xY...Q==`，**必须**是 Base64 编码的 32 字节随机串（解码后正好 256 bit）。本地开发可写 `~/.bashrc` 或项目 `.env`：
+
+```bash
+export ULP_MFA_KEK="aB3xY...Q=="
+```
+
+### K8s Secret 示例
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ulp-mfa-kek
+type: Opaque
+stringData:
+  ULP_MFA_KEK: aB3xY...Q==  # openssl rand -base64 32
+---
+# Deployment 引用（三个服务都需要）
+spec:
+  template:
+    spec:
+      containers:
+        - name: ulp-portal
+          envFrom:
+            - secretRef:
+                name: ulp-mfa-kek
+```
+
+### 灾备备份（强烈建议）
+
+KEK 一旦丢失，**所有已绑定的 TOTP secret 都无法解密** —— 用户必须重新走 `prepare → confirm` 绑定流程，已发的备份码也全部作废。务必：
+
+- 把 KEK 同步存进团队密码管理器（1Password / Bitwarden / Vault 等）的"基础设施密钥"分组，至少两个负责人有访问权
+- 轮换 KEK 是破坏性操作，需要先把所有 secret 解密 → 用新 KEK 加密回写 → 翻 env var；当前版本未提供自动迁移工具，规划在专门变更中处理
+- `ULP_MFA_KEK` 仅用于加密 TOTP secret，与 ROPC / Session / DB 密码 hash 完全无关，不要复用其它服务的密钥
+
+### ⚠️ ROPC（OAuth2 Password Grant）行为变更
+
+启用 MFA 后，**任何已开启 `mfa_enabled` 的用户都无法继续走 ROPC 密码模式**——`POST /oauth2/token grant_type=password` 会返回：
+
+```
+HTTP/1.1 400 Bad Request
+{
+  "error": "invalid_grant",
+  "error_description": "mfa_required_use_authorization_code_flow"
+}
+```
+
+原因：ROPC 协议本身没有携带第二因子的标准字段，按规范无法承载 OTP / 备份码挑战。OpenAPI 集成方有 MFA 需求时，**必须迁移到 Authorization Code Flow（推荐 PKCE）**——OIDC `/oauth2/authorize` 端点会按需触发 `/mfa/challenge` 中转页，完成挑战后正常下发 code，token 互换路径不变。未启用 MFA 的用户仍可继续 ROPC，本次变更对其无影响。
+
 ## 参与贡献
 
 欢迎有兴趣的开发者参与到项目建设中，欢迎大家对项目提出宝贵意见建议和功能需求。

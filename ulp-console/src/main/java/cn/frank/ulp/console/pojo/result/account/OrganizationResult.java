@@ -75,4 +75,12 @@ public class OrganizationResult implements Serializable {
     @Schema(description = "备注")
     private String            remark;
 
+    /**
+     * 组织级 MFA 强制位（{@code ulp_organization.mfa_enforced}）。
+     * 控制台「编辑组织」抽屉据此显示当前强制状态；切换通过
+     * {@code POST /api/v1/admin/organizations/{id}/mfa-policy}（仅 ADMIN）。
+     */
+    @Schema(description = "组织级强制 MFA")
+    private Boolean           mfaEnforced;
+
 }

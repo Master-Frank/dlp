@@ -43,7 +43,7 @@ import cn.frank.ulp.support.security.authentication.WebAuthenticationDetails;
 import cn.frank.ulp.support.security.userdetails.Application;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -71,7 +71,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * （在 {@code MfaAuditEventIT} 中处理，避免本 IT 与 audit 模块强耦合）。
  */
 @ActiveProfiles("test")
-class OrgMfaPolicyControllerIT extends AbstractIntegrationTest {
+class OrgMfaPolicyControllerIT extends AbstractMfaIntegrationTest {
 
     private static final String          PATH_PREFIX = "/api/v1/admin/organizations/";
 

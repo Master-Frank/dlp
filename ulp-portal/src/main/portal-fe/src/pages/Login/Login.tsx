@@ -189,6 +189,18 @@ const Login = () => {
     setUserLoginState({ message: '', status: '' });
     if (result) {
       if (result?.success) {
+        // 需要 MFA 二次验证（已绑定）→ 跳转到挑战页
+        if (result?.status === SESSION_STATUS.mfa_required) {
+          const search = queryString.stringify({ redirect_uri: redirect_uri || '/api/v1/jump' });
+          window.location.replace(`/mfa/challenge?${search}`);
+          return Promise.resolve(false);
+        }
+        // 组织强制 MFA 但未绑定 → 跳转到绑定向导
+        if (result?.status === SESSION_STATUS.mfa_setup_required) {
+          const search = queryString.stringify({ redirect_uri: redirect_uri || '/api/v1/jump' });
+          window.location.replace(`/mfa/setup?${search}`);
+          return Promise.resolve(false);
+        }
         message.loading({
           content: intl.formatMessage({ id: 'pages.login.success-prompt' }),
           key: 'loading',

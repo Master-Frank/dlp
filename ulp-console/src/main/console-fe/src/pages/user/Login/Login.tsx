@@ -154,6 +154,12 @@ const Login: React.FC = () => {
         setStatus(SESSION_STATUS.REQUIRE_RESET_PASSWORD);
         return Promise.resolve(false);
       }
+      // 需要 MFA 二次验证
+      if (result.status === SESSION_STATUS.MFA_REQUIRED) {
+        const search = queryString.stringify({ redirect_uri });
+        window.location.replace(`/mfa/challenge?${search}`);
+        return Promise.resolve(false);
+      }
       await fetchUserInfo();
       message.loading({
         content: intl.formatMessage({ id: 'pages.login.success-prompt' }),

@@ -47,6 +47,20 @@ export default [
     component: './user/ResetPassword',
   },
   {
+    name: 'mfa-setup',
+    path: '/mfa/setup',
+    layout: false,
+    hideInMenu: true,
+    component: './user/MFA/Setup',
+  },
+  {
+    name: 'mfa-challenge',
+    path: '/mfa/challenge',
+    layout: false,
+    hideInMenu: true,
+    component: './user/MFA/Challenge',
+  },
+  {
     name: 'account.profile',
     path: '/user/profile',
     hideInMenu: true,

@@ -53,7 +53,7 @@ import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
 import cn.frank.ulp.support.security.mfa.MfaSecretGenerator;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -110,7 +110,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @ActiveProfiles("test")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class PortalOrgMfaEnforcementIT extends AbstractIntegrationTest {
+class PortalOrgMfaEnforcementIT extends AbstractMfaIntegrationTest {
 
     private static final String          LOGIN_PATH      = "/api/v1/login";
     private static final String          PROTECTED_PATH  = "/api/v1/session/current_user";

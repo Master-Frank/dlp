@@ -39,6 +39,8 @@ declare namespace API {
     username: string;
     fullName: string;
     access: string[];
+    /** 是否已绑定 TOTP（MFA） */
+    totpBind?: boolean;
   };
 
   /**

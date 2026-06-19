@@ -74,10 +74,13 @@ import cn.frank.ulp.support.security.authentication.WebAuthenticationDetailsSour
 import cn.frank.ulp.support.security.configurer.FormLoginConfigurer;
 import cn.frank.ulp.support.security.csrf.SpaCsrfTokenRequestHandler;
 import cn.frank.ulp.support.security.mfa.MfaAwareAuthenticationSuccessHandler;
+import cn.frank.ulp.support.security.mfa.MfaBackupCodeService;
+import cn.frank.ulp.support.security.mfa.MfaBackupCodeStore;
 import cn.frank.ulp.support.security.mfa.MfaChallengeService;
 import cn.frank.ulp.support.security.mfa.MfaCodeVerifier;
 import cn.frank.ulp.support.security.mfa.MfaDecision;
 import cn.frank.ulp.support.security.mfa.MfaLockoutService;
+import cn.frank.ulp.support.security.mfa.MfaMetrics;
 import cn.frank.ulp.support.security.mfa.MfaPendingAuthenticationStore;
 import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
 import cn.frank.ulp.support.security.mfa.MfaService;
@@ -88,6 +91,7 @@ import cn.frank.ulp.support.web.useragent.UserAgentParser;
 
 import lombok.RequiredArgsConstructor;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import tools.jackson.databind.ObjectMapper;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.web.header.writers.XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK;
@@ -508,9 +512,37 @@ public class ConsoleSecurityConfiguration implements BeanClassLoaderAware {
                                                    MfaLockoutService mfaLockoutService,
                                                    MfaCodeVerifier codeVerifier,
                                                    MfaSecretCipher secretCipher,
-                                                   Collection<MfaService> mfaServices) {
+                                                   Collection<MfaService> mfaServices,
+                                                   MfaBackupCodeService mfaBackupCodeService) {
         return new MfaChallengeService(mfaPendingStore, mfaLockoutService, codeVerifier,
-            secretCipher, mfaServices);
+            secretCipher, mfaServices, mfaBackupCodeService);
+    }
+
+    /**
+     * Backup-code consume 引擎。{@link Collection} 注入会自动包含所有
+     * {@link MfaBackupCodeStore} bean —— console 当前只有
+     * {@link cn.frank.ulp.console.service.security.AdministratorBackupCodeStore}，按 subject
+     * type 路由。{@link PasswordEncoder} 复用全局 {@code DelegatingPasswordEncoder}（默认 Argon2id）
+     * 做明文 → 已存储 hash 的恒定时间比较；与 bind confirm 用同一个 encoder 才能 matches。
+     */
+    @Bean
+    public MfaBackupCodeService mfaBackupCodeService(Collection<MfaBackupCodeStore> stores,
+                                                     PasswordEncoder passwordEncoder) {
+        return new MfaBackupCodeService(stores, passwordEncoder);
+    }
+
+    /**
+     * Micrometer 计数器 / Gauge 容器。注册三组指标：
+     * {@code ulp_mfa_verify_total{subject_type,via,outcome}} /
+     * {@code ulp_mfa_lockout_total{subject_type,phase}} /
+     * {@code ulp_mfa_bind_total{subject_type,phase,outcome}}，以及一个 30s 缓存 SCAN 的
+     * {@code ulp_mfa_pending_active} Gauge。控制器层（{@code MfaController} /
+     * {@code MfaChallengeController}）作为可选依赖注入；不存在该 bean 时 metrics 静默 no-op，
+     * 兼容只跑业务流程不挂 actuator 的轻量 IT。
+     */
+    @Bean
+    public MfaMetrics mfaMetrics(MeterRegistry meterRegistry, StringRedisTemplate redisTemplate) {
+        return new MfaMetrics(meterRegistry, redisTemplate);
     }
 
     /**

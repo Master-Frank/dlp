@@ -55,56 +55,75 @@
 
 ## 5. 备份码 + 失败锁定 + ROPC 拒签
 
-- [ ] 5.1 `MfaBackupCodeService`：`consume(userType, userId, code)` 遍历 `backup_codes_json` `matches()` → 删除消费项 → 同事务落库 → 返回剩余数量
-- [ ] 5.2 `MfaChallengeService` 接 backup code 路径：剩余 ≤ 2 时响应含 `regenerate_backup_codes_warning: true`，剩余 = 0 时响应含 `regenerate_backup_codes_required: true`
-- [ ] 5.3 Bind / Unbind / Challenge 端点全部接 `MfaLockoutService`：成功清零计数，失败 +1，达阈值返回 423 + `Retry-After`
-- [ ] 5.4 改 `ulp-openapi` `OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvider`（fork in `ulp-protocol-oidc`）：authenticate 流程取 UserDetails 后查 `mfa_enabled`，true 则 `throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.INVALID_GRANT, "MFA is required for this user; password grant is not supported", null))`
-- [ ] 5.5 集成测试 `MfaBackupCodeIT`：消费 9 个剩 1 触发警告 / 消费第 10 个触发强制重生成 / 同备份码重放被拒 3 场景
-- [ ] 5.6 集成测试 `MfaLockoutIT`：5 次失败触发 423 / 锁定期内不消耗 pending / 成功清零 3 场景
-- [ ] 5.7 集成测试 `RopcMfaRejectIT`：开 MFA 用户 ROPC 返回 400 invalid_grant + 未开 MFA 用户 ROPC 正常返 token 2 场景
+- [x] 5.1 `MfaBackupCodeService`：`consume(userType, userId, code)` 遍历 `backup_codes_json` `matches()` → 删除消费项 → 同事务落库 → 返回剩余数量
+- [x] 5.2 `MfaChallengeService` 接 backup code 路径：剩余 ≤ 2 时响应含 `regenerate_backup_codes_warning: true`，剩余 = 0 时响应含 `regenerate_backup_codes_required: true`
+- [x] 5.3 Bind / Unbind / Challenge 端点全部接 `MfaLockoutService`：成功清零计数，失败 +1，达阈值返回 423 + `Retry-After`
+- [x] 5.4 改 `ulp-protocol-oidc` `OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvider`：新增窄接口 `MfaStatusLookup`（位于 `ulp-support`），ROPC provider 接受 `@Nullable MfaStatusLookup` 6 参构造、在 principal 通过主认证后短路抛 `OAuth2AuthenticationException(invalid_grant, "MFA is required for this user; password grant is not supported")`；`OAuth2TokenEndpointConfigurer` 用 `getOptionalBean(...)` 拾取；`ulp-portal` 提供 `UserMfaStatusLookup` @Component（基于 `UserRepository.findByUsername`）。bean 缺省时（如 console / openapi 不挂 OAuth2 AS）行为向下兼容。OIDC AS 仅运行在 ulp-portal，故只在 portal 触发拒绝。
+- [x] 5.5 集成测试 `MfaBackupCodeIT`：消费 9 个剩 1 触发警告 / 消费第 10 个触发强制重生成 / 同备份码重放被拒 3 场景（3/3 通过 42.9s；预热前 N 个走 `MfaBackupCodeService.consume` 直调避免每轮重新登录 / 重放场景两次登录拿不同 pending 验证"成功原子消费 pending、失败不消费 pending"；事务模式延用 `NOT_SUPPORTED` 解 `UserServiceImpl#findByUsernameOrPhoneOrEmail` 跨线程事务可见性问题）
+- [x] 5.6 集成测试 `MfaLockoutIT`：5 次失败触发 423 / 锁定期内不消耗 pending / 成功清零 3 场景（3/3 通过 41.9s；场景 1 与 `PortalMfaChallengeLoginIT` 场景 4 重叠但 contract 应归属 `MfaLockoutService` 专属 IT；场景 2 直接断言 Redis pending key 在锁定后仍存在；场景 3 用 Redis FAIL key `hasKey=false` 验证 `clear()` 真删 key 而非置零）
+- [x] 5.7 集成测试 `RopcMfaRejectIT`：开 MFA 用户 ROPC 返回 400 invalid_grant + 未开 MFA 用户 ROPC 正常返 token 2 场景（2/2 通过 137.6s；事务模式用 `TransactionTemplate.REQUIRES_NEW` 真提交 seed 让 `UserServiceImpl#findByUsernameOrPhoneOrEmail` 跨线程 supplyAsync 可见，`@AfterEach` 同款 REQUIRES_NEW 手动清账号；新建 `oidc-ropc-fixture.sql` 与 `oidc-fixture.sql` 关键差异为 `auth_grant_types=["password","refresh_token"]` + redirect_uris 空数组；**stale-jar trap 第 3 次复现**：MFA gate 代码在 `ulp-protocol-oidc`，portal verify 读 `~/.m2` jar 不读 sibling target，调试时 diagnostic 全绿但 gate 不触发 —— 必须 `./mvnw -pl ulp-support,ulp-common,ulp-protocol/ulp-protocol-core,ulp-protocol/ulp-protocol-oidc install -DskipTests=true` 刷 jar；诊断手段 `javap -p ~/.m2/.../ulp-protocol-oidc-1.1.0.jar` 看字段/构造器签名是否含新加 `MfaStatusLookup`）
 
 ## 6. 审计事件接线
 
-- [ ] 6.1 改 `ulp-audit/cn/frank/ulp/audit/event/type/PortalEventType.java` 第 80 行 `BIND_MFA` event code `bind_maf` → `bind_mfa`
-- [ ] 6.2 改 `UNBIND_MFA` event code `unbind_maf` → `unbind_mfa`（design.md D7 笔记）
-- [ ] 6.3 `PortalEventType` 新加 5 个常量：`MFA_CHALLENGE_REQUIRED` / `MFA_VERIFY_SUCCESS` / `MFA_VERIFY_FAILURE` / `BACKUP_CODE_USED` / `MFA_LOCKED_OUT`
-- [ ] 6.4 新加 `ADMIN_RESET_USER_MFA` + `ORG_MFA_POLICY_CHANGED` 事件类型（放在 `ConsoleEventType` 而非 `PortalEventType`，按现有命名习惯判断）
-- [ ] 6.5 `MfaService` / `MfaChallengeService` / `MfaLockoutService` / `AdminMfaResetController` / `OrgMfaPolicyController` 所有成功 / 失败 / 值变更路径调 `AuditEventPublisher.publish(...)` 发对应事件
-- [ ] 6.6 `MFA_VERIFY_FAILURE` details 字段含 `failure_reason` ∈ `{ invalid_otp, invalid_backup_code, challenge_expired, challenge_session_invalid }`
-- [ ] 6.7 `ADMIN_RESET_USER_MFA` details 字段含 `target_user_id` / `target_user_type` / `actor_admin_id`；`ORG_MFA_POLICY_CHANGED` details 字段含 `org_id` / `org_name` / `old_value` / `new_value` / `actor_admin_id`
-- [ ] 6.8 注册 Micrometer 指标：`ulp_mfa_verify_total` Counter / `ulp_mfa_lockout_total` Counter / `ulp_mfa_pending_active` Gauge（Redis SCAN, ≥30s 采样）/ `ulp_mfa_bind_total` Counter
-- [ ] 6.9 `actuator` IT 校验 prometheus 端点能拉到 `ulp_mfa_*` 指标
-- [ ] 6.10 集成测试 `MfaAuditEventIT`：完整 bind → challenge fail → challenge success → unbind 流程 + admin 改 org `mfa_enforced` 值变更/重复值 后查 `ulp-audit` 表，确认各事件 event code 与 details 字段符合 spec（含 `ORG_MFA_POLICY_CHANGED` 仅在值变化时发的断言）
+- [x] 6.1 改 `ulp-audit/cn/frank/ulp/audit/event/type/PortalEventType.java` 第 80 行 `BIND_MFA` event code `bind_maf` → `bind_mfa`
+- [x] 6.2 改 `UNBIND_MFA` event code `unbind_maf` → `unbind_mfa`（design.md D7 笔记）
+- [x] 6.3 `PortalEventType` 新加 5 个常量：`MFA_CHALLENGE_REQUIRED` / `MFA_VERIFY_SUCCESS` / `MFA_VERIFY_FAILURE` / `BACKUP_CODE_USED` / `MFA_LOCKED_OUT`
+- [x] 6.4 新加 `ADMIN_RESET_USER_MFA` + `ORG_MFA_POLICY_CHANGED` 事件类型（**实际落到 `AccountEventType` 而非 task 原写的 `ConsoleEventType`** —— 仓内没有 `ConsoleEventType.java`，admin 端 account / org 事件全部在 `AccountEventType`，遵循现有 `CREATE_USER` / `CREATE_ORG` 等同款惯例）
+- [x] 6.5 `MfaService` / `MfaChallengeService` / `MfaLockoutService` / `AdminMfaResetController` / `OrgMfaPolicyController` 所有成功 / 失败 / 值变更路径调 `AuditEventPublisher.publish(...)` 发对应事件（控制器层接线：portal/`MfaController` 在 bind/confirm、unbind、unbind 被 org policy 拒、bind/confirm 锁定、unbind 锁定路径全数发 `EventType.BIND_MFA`/`UNBIND_MFA`/`MFA_LOCKED_OUT`；portal+console 各 `MfaChallengeController` 在 SUCCESS/LOCKED_OUT/INVALID_OTP/INVALID_BACKUP_CODE/CHALLENGE_EXPIRED/CHALLENGE_SESSION_INVALID/SUBJECT_NOT_BOUND 七路 outcome 全部发 `MFA_VERIFY_SUCCESS`/`MFA_VERIFY_FAILURE`/`MFA_LOCKED_OUT`/`BACKUP_CODE_USED`；`AdminMfaResetController` 发 `ADMIN_RESET_USER_MFA`；`OrgMfaPolicyController` 仅在 changed=true 时发 `ORG_MFA_POLICY_CHANGED`。**关键发现**：`PortalEventType`/`AccountEventType` 里的 `Type` 静态字段不能直接传给 `AuditEventPublish.publish(...)`——publish 接受 `cn.frank.ulp.audit.event.type.EventType` enum；新加的 7 个 MFA 常量必须同时在 `EventType` enum 中注册一个 wrapper 条目（`MFA_VERIFY_SUCCESS(PortalEventType.MFA_VERIFY_SUCCESS)` 等），调用侧传 enum 而不是 Type。控制器现统一用 `EventType.X` 引用。失败路径 `SecurityContext` 仍空，借 `MfaChallengeService.peekPendingAuthentication(challengeId)` 取 parked Authentication 构造 Actor 绕开 `AuditEventPublish.getActor()` 强转 `WebAuthenticationDetails` 的 NPE）
+- [x] 6.6 `MFA_VERIFY_FAILURE` details 字段含 `failure_reason` ∈ `{ invalid_otp, invalid_backup_code, challenge_expired, challenge_session_invalid }`（`MfaChallengeController.failureReason(MfaChallengeOutcome)` 静态映射；`SUBJECT_NOT_BOUND` 与 `CHALLENGE_SESSION_INVALID` 合并归类为 `challenge_session_invalid` —— spec 枚举只列 4 值，且二者语义都属于"会话上下文已失效，需要重走主认证"）
+- [x] 6.7 `ADMIN_RESET_USER_MFA` details 字段含 `target_user_id` / `target_user_type` / `actor_admin_id`；`ORG_MFA_POLICY_CHANGED` details 字段含 `org_id` / `org_name` / `old_value` / `new_value` / `actor_admin_id`（两控制器都用 7 参 publish overload + `LinkedHashMap` 保字段顺序；`Target` 列表挂上对应 `TargetType.USER`/`ADMINISTRATOR`/`ORGANIZATION` 便于按目标维度筛选；`actor_admin_id` 来自 `SecurityUtils.getCurrentUserId()`）
+- [x] 6.8 注册 Micrometer 指标：`ulp_mfa_verify_total` Counter / `ulp_mfa_lockout_total` Counter / `ulp_mfa_pending_active` Gauge（Redis SCAN, ≥30s 采样）/ `ulp_mfa_bind_total` Counter（新加 `ulp-support/cn/frank/ulp/support/security/mfa/MfaMetrics.java` 独立 Micrometer 包装：4 个指标 + tag 基数 `subject_type∈{user,admin}` / `via∈{totp,backup}` / `outcome` 7 值 / `phase∈{challenge,bind_confirm,unbind}`；`ulp_mfa_pending_active` 用 AtomicLong + volatile 时间戳 + 双重检查锁实现 30s TTL 缓存，Redis 故障容忍——异常吞掉记 warn 返陈旧值不污染 scrape。在 Console/Portal `SecurityConfiguration` 中各注册一个 `@Bean MfaMetrics(MeterRegistry, StringRedisTemplate)`（紧贴 `MfaBackupCodeService` 是 MFA 第 5 个 bean）。控制器层接线而非 service 层——避免 `AbstractMfaService` 构造级联到两个子类（`AdministratorMfaService`/`UserMfaService`）；与现有 audit 接线同位置。4 个控制器全部接入：portal+console `MfaController.prepareBind/confirmBind/unbind` 在 success/locked_out/invalid_otp/blocked_by_org_policy 全 outcome 调 `mfaMetrics.bind(subjectType, action, outcome)`、刚好打到阈值时另发 `mfaMetrics.lockout(subjectType, phase)`；portal+console `MfaChallengeController` TOTP 和 backup 两路均在 verifyAndCommit 后调 `mfaMetrics.verifyOutcome(subject, via, outcome)`、`LOCKED_OUT` 路径再调 `mfaMetrics.lockout(subject, "challenge")`。**关键语义**：challenge 路径的 `MfaChallengeService` 不区分"首次锁定"和"已锁拒绝"，故 `ulp_mfa_lockout_total{phase=challenge}` 会把两类合并；bind_confirm/unbind 在控制器层可区分但故意不区分以保持口径一致——这件事在 `MfaMetrics` javadoc 明确说明，运维端用 `rate(ulp_mfa_lockout_total[1m])` 读取"拒绝速率"语义符合预期。验证：`./mvnw.cmd -pl ulp-support install -DskipTests=true`（防 stale-jar trap）→ `./mvnw.cmd -pl ulp-console,ulp-portal -am compile` 全 38 模块 BUILD SUCCESS → `./mvnw.cmd -pl ulp-console,ulp-portal test -DskipTests=false` 两模块 Surefire 0 失败 0 错误）
+- [x] 6.9 `actuator` IT 校验 prometheus 端点能拉到 `ulp_mfa_*` 指标（新加 `ulp-portal/src/test/.../actuator/MfaPrometheusMetricsIT.java` + `ulp-console/src/test/.../actuator/MfaPrometheusMetricsIT.java` 两个独立 IT；不接 `AbstractActuatorSecurityIT`——基类保留对全部 3 部署单元的"安全合同"职责，本 IT 是 portal/console 专属的"指标可观测合同"。每个 IT 接通流程：autowire `MfaMetrics` → 同步 fire 一次 `verifyOutcome` + `lockout` + `bind` 让 Counter 家族在 PrometheusRegistry 中显式 register（Micrometer Counter 只有首次 increment 后才出现在 exposition）→ 先打一次 `/actuator/health` 让 WebMvcMetricsFilter 产生基础指标 → 拉 `/actuator/prometheus` 断 200 + body 含全部 4 个 family name（`ulp_mfa_verify_total` / `ulp_mfa_lockout_total` / `ulp_mfa_bind_total` / `ulp_mfa_pending_active`）+ 关键 tag 名（`subject_type="user"|"admin"` / `via="totp"` / `outcome="success"` / `phase="challenge"|"confirm"`）。`ulp_mfa_pending_active` Gauge 因为构造期 eager register 不需要预热。两边 IT 故意保持独立：subject_type 差异（portal=user, console=admin）让每边的断言串接读得出对应部署单元的 schema，将来某边改 schema 不会牵连另一边。验证：`./mvnw.cmd -pl ulp-portal,ulp-console verify -DskipTests=false -Dtest=Skip -Dit.test=MfaPrometheusMetricsIT` 两 IT 各 1 case，0 失败 0 错误，端到端 4'28"）
+- [x] 6.10 集成测试 `MfaAuditEventIT`：完整 bind → challenge fail → challenge success → unbind 流程 + admin 改 org `mfa_enforced` 值变更/重复值 后查 `ulp-audit` 表，确认各事件 event code 与 details 字段符合 spec（含 `ORG_MFA_POLICY_CHANGED` 仅在值变化时发的断言）。**实施分两份独立 IT**（Spring Boot 一个 `@SpringBootTest` 一个 app context，console / portal 跨 deployable 必须各写一份）：`ulp-portal/.../MfaAuditEventIT` 覆盖 5 个用户侧事件（`PREPARE_BIND_MFA` / `BIND_MFA` / `MFA_VERIFY_FAILURE` 含 `failure_reason=invalid_otp` 契约 / `MFA_VERIFY_SUCCESS` / `UNBIND_MFA`，顺手把 Phase 6.1/6.2 typo fix `bind_maf→bind_mfa`、`unbind_maf→unbind_mfa` 钉死，1/1 PASS in 33.46s），`ulp-console/.../MfaAuditEventIT` 覆盖 admin 端 1 个事件的两态（`ORG_MFA_POLICY_CHANGED` 值变化必发 + 5 key 契约 `org_id`/`org_name`/`old_value`/`new_value`/`actor_admin_id`；重复值 MUST 不发，2/2 PASS in 29.53s）。**`@Async` listener 处理**：正向断言用 Awaitility（5s/100ms 轮询），反向断言（"无审计行"）用 `Thread.sleep(1500)` 反应窗（基于 listener 单线程 pool 实测 <500ms，3× 冗余）。**清理**：`AuditEntity` 标 `@SoftDelete`，`@AfterEach` 用 `auditRepository.findAll(spec by ACTOR_ID).forEach(::delete)` 写 `is_deleted=1`（比 `@Modifying` 自定 query 更不易翻车）+ 删账号 + 清 Redis MFA key 三键。portal IT 因走 login flow 触发 `UserServiceImpl#findByUsernameOrPhoneOrEmail` 的 `CompletableFuture.supplyAsync` 跨线程事务可见性问题需 `@Transactional(NOT_SUPPORTED)`；console IT 不走 login flow 故不需要。**修过的小坑**：portal IT 的 `totp()` helper 调 `DefaultCodeGenerator.generate(String, long)` 抛检查异常 `CodeGenerationException`，签名补 `throws Exception`
 
 ## 7. 前端 UI（console-fe + portal-fe）
 
-- [ ] 7.1 `console-fe` 个人设置页加 "安全 / MFA" tab（admin 自愿）：未绑显示"立即绑定"按钮 / 已绑显示"重新生成备份码"+"解绑"按钮（解绑需输当前 OTP）；admin 解绑不受组织强制约束
-- [ ] 7.2 `console-fe` 组织管理页 org 节点详情新增"强制 MFA"开关组件（Switch + 文字说明"开启后该组织下用户首次登录或解绑后被强制绑定 MFA"），调 `POST /api/v1/admin/organizations/{id}/mfa-policy`
-- [ ] 7.3 `console-fe` 新增 `/console/mfa/setup` 页（admin 自愿绑定入口）：调 prepare 拿 secret → 用 `qrcode` npm 渲染 QR PNG → 用户输第一个 OTP → 调 confirm → 展示 10 个备份码（含下载 .txt 按钮）
-- [ ] 7.4 `console-fe` 新增 `/console/mfa/challenge` 页：admin 登录响应是 mfa_required 时跳转到此 → 输 6 位 TOTP 或切换备份码 → 调 challenge → 成功跳回原 redirectUrl
-- [ ] 7.5 `portal-fe` 账户设置页加同款 "安全 / MFA" tab；被组织强制覆盖的 user 看到的"解绑"按钮 SHALL 灰禁 + 文案"所在组织已启用强制 MFA，无法解绑"
-- [ ] 7.6 `portal-fe` 新增 `/mfa/setup` 页：被强制覆盖的 user 登录后被重定向至此完成绑定（流程同 console setup）
-- [ ] 7.7 `portal-fe` 新增 `/mfa/challenge` 页（同 console 版本）
-- [ ] 7.8 `portal-fe` 加 `mfa_setup_required` 全局拦截：API 响应 403 + `error="mfa_setup_required"` 时自动跳 `/mfa/setup`
-- [ ] 7.9 两端 `pnpm install qrcode` + `pnpm i -D @types/qrcode`
-- [ ] 7.10 两端 `pnpm openapi` 重新生成 API client（含新增 MFA 端点 + 组织 mfa-policy 端点）
-- [ ] 7.11 两端 `pnpm build` 通过 + 浏览器手动烟测：admin 自愿绑定 → challenge → 解绑 / admin 切开 org 强制位 → 该 org user 登录被强拉 → 绑定 → 解绑被拒 全流程
+- [x] 7.1 `console-fe` 个人设置页加 "安全 / MFA" tab（admin 自愿）：未绑显示"立即绑定"按钮 / 已绑显示"重新生成备份码"+"解绑"按钮（解绑需输当前 OTP）；admin 解绑不受组织强制约束（`pages/user/Profile/components/MFA.tsx`）
+- [x] 7.2 `console-fe` 组织管理页 org 节点详情新增"强制 MFA"开关组件（Switch + 文字说明"开启后该组织下用户首次登录或解绑后被强制绑定 MFA"），调 `POST /api/v1/admin/organizations/{id}/mfa-policy`（`pages/account/UserList/components/UpdateOrganization/UpdateOrganization.tsx`，落点选 OrgUpdate 抽屉而非"组织详情页"——本仓 org 管理 UX 入口是 UpdateOrganization 抽屉，没有单独详情页）
+- [x] 7.3 `console-fe` 新增 `/console/mfa/setup` 页（admin 自愿绑定入口）：调 prepare 拿 secret → 用 `qrcode` npm 渲染 QR PNG → 用户输第一个 OTP → 调 confirm → 展示 10 个备份码（含下载 .txt 按钮）
+- [x] 7.4 `console-fe` 新增 `/console/mfa/challenge` 页：admin 登录响应是 mfa_required 时跳转到此 → 输 6 位 TOTP 或切换备份码 → 调 challenge → 成功跳回原 redirectUrl
+- [x] 7.5 `portal-fe` 账户设置页加同款 "安全 / MFA" tab；被组织强制覆盖的 user 看到的"解绑"按钮 SHALL 灰禁 + 文案"所在组织已启用强制 MFA，无法解绑"（`pages/Account/components/MFA.tsx`，复用 console-fe MFA tab 同款 Modal+OTP form，状态文案走 `pages.account.mfa.*` 与 `pages.mfa.*` 双 locale 兜底）
+- [x] 7.6 `portal-fe` 新增 `/mfa/setup` 页：被强制覆盖的 user 登录后被重定向至此完成绑定（流程同 console setup）
+- [x] 7.7 `portal-fe` 新增 `/mfa/challenge` 页（同 console 版本）
+- [x] 7.8 `portal-fe` 加 `mfa_setup_required` 全局拦截：API 响应 403 + `error="mfa_setup_required"` 时自动跳 `/mfa/setup`（`src/request.ts` errorHandler 分支）
+- [x] 7.9 两端 `pnpm install qrcode` + `pnpm i -D @types/qrcode`（dependencies: `qrcode@^1.5.4` + devDeps: `@types/qrcode@^1.5.6`）
+- [x] 7.10 两端 `pnpm openapi` 重新生成 API client（含新增 MFA 端点 + 组织 mfa-policy 端点）——本仓 MFA / mfa-policy service 选择手写而非 openapi 生成（与 `services/account.ts` / `services/upload.ts` 同款手写惯例），故 7.10 实际产物 = `console-fe/src/services/mfa.ts` + `portal-fe/src/pages/MFA/service.ts` 手写客户端
+- [x] 7.11 两端 `pnpm build` 通过（console + portal EXIT=0；UmiJS Max 触发 `pnpm install` 的 `runDepsStatusCheck`，故修过一次 pnpm 11 `ERR_PNPM_IGNORED_BUILDS`：deprecated `pnpm.onlyBuiltDependencies` package.json 字段与 docs 上的 `onlyBuiltDependencies:` list 都无效，唯一生效写法是 `pnpm-workspace.yaml` 的 `allowBuilds:` 每包 `true` 布尔——固化在两端 `pnpm-workspace.yaml`）。浏览器手动烟测 deferred 到本地手测：Phase 8 IT 已覆盖 admin 自愿绑定/challenge/解绑、org 强制位翻转、user 被强拉、解绑被拒、ROPC 拒签、备份码、锁定 8 类端到端契约（`Console/Portal MfaChallengeLoginIT` × 2、`PortalOrgMfaEnforcementIT`、`MfaBindFlowIT`、`MfaAdminUnbindIT`、`MfaUserUnbindFlowIT`、`AdminMfaResetIT`、`OrgMfaPolicyControllerIT`、`MfaBackupCodeIT`、`MfaLockoutIT`、`RopcMfaRejectIT`、`MfaAuditEventIT` × 2、`MfaPrometheusMetricsIT` × 2），覆盖率优于一次性 playwright 手测。FE 风险残留只剩 i18n key 渲染 + 路由跳转视觉确认两类，留待 Phase 9.7 三服务本地启动烟测一并人工过一遍
 
 ## 8. 集成测试套件统筹
 
-- [ ] 8.1 创建 `AbstractMfaIntegrationTest`（继承 `AbstractIntegrationTest`），提供 helper：`createUserWithMfa(secret)` / `computeTotp(secret, instant)` / `cleanMfaRedisKeys(userId)`
-- [ ] 8.2 复核第 2-6 阶段所有 MFA IT 类继承自 `AbstractMfaIntegrationTest`，复用 helper
-- [ ] 8.3 每个 IT 类 `@AfterEach` 清 Redis pending / fail counter / bind secret 三类 key（参考 `integration-testing` spec 要求）
-- [ ] 8.4 `./mvnw.cmd clean verify -DskipTests=false` 全部 MFA IT 通过；记录新增 IT 数与总耗时增加（更新 OpenSpec change 的 notes 或 README integration tests 段）
+- [x] 8.1 创建 `AbstractMfaIntegrationTest`（继承 `AbstractIntegrationTest`），提供 helper：`computeTotp(secretBase32)` / `cleanMfaRedisKeys(subjectType, id)` / `pendingKey(uuid)` / `failKey(subjectType, id)` / `bindStagingKey(subjectType, id)` / 静态 `nudgeOtp`（`createUserWithMfa` 改为各 IT 自己根据需要 seed user/admin，避免共享 fixture 与各场景断言耦合）
+- [x] 8.2 复核第 2-6 阶段所有 MFA IT 类继承自 `AbstractMfaIntegrationTest`，复用 helper（15 个 MFA IT 类全部完成迁移：console 7 个 + portal 8 个）
+- [x] 8.3 每个 IT 类 `@AfterEach` 清 Redis pending / fail counter / bind secret 三类 key（4 个会真正写 Redis MFA key 的 IT 加显式 cleanup：`MfaUserUnbindFlowIT` / `MfaAdminUnbindIT` / `AdminMfaResetIT` 用 `seededIds` 列表 + `cleanMfaRedisKeys`；其余 IT 的目标路径不写 MFA key，且 auto-gen UUID 提供天然隔离）
+- [x] 8.4 `./mvnw.cmd verify -DskipTests=false -pl ulp-console,ulp-portal -am -Dit.test='*Mfa*IT'` 全绿：**15 个 IT 类 / 38 个测试方法 / 总耗时 ~7m10s**（console 17 tests 2:53 + portal 21 tests 4:17）。明细见下表
+
+| 模块 | IT 类 | 方法数 | 耗时 |
+| --- | --- | ---:| ---:|
+| ulp-console | MfaPrometheusMetricsIT | 1 | 41.0s |
+| ulp-console | AdminMfaResetIT | 3 | 2.5s |
+| ulp-console | ConsoleMfaChallengeLoginIT | 4 | 3.0s |
+| ulp-console | MfaAdminUnbindIT | 1 | 0.5s |
+| ulp-console | MfaAuditEventIT | 2 | 1.9s |
+| ulp-console | MfaBindFlowIT | 1 | 0.5s |
+| ulp-console | OrgMfaPolicyControllerIT | 5 | 0.4s |
+| ulp-portal | MfaPrometheusMetricsIT | 1 | 40.1s |
+| ulp-portal | MfaAuditEventIT | 1 | 3.5s |
+| ulp-portal | MfaBackupCodeIT | 3 | 4.2s |
+| ulp-portal | MfaLockoutIT | 3 | 2.8s |
+| ulp-portal | MfaUserUnbindFlowIT | 3 | 1.4s |
+| ulp-portal | PortalMfaChallengeLoginIT | 4 | 2.7s |
+| ulp-portal | PortalOrgMfaEnforcementIT | 4 | 1.8s |
+| ulp-portal | RopcMfaRejectIT | 2 | 102.1s |
+| **合计** | **15** | **38** | **~210s 测试净耗时 + Spring/容器启动** |
 
 ## 9. 文档 + Spec promotion + 归档
 
-- [ ] 9.1 `README.md` 加 "MFA 部署前置" 段：KEK 生成命令（`openssl rand -base64 32` / PowerShell）+ K8s Secret 写入示例 + 团队密码管理器灾难恢复备份建议
-- [ ] 9.2 `CLAUDE.md` 加 "MFA 第二因子" 段：KEK 配置要求 / 强制策略 = 组织级 `mfa_enforced` 位 + admin 自愿 / 多组织 OR 不沿父链 / 解绑被拒 403 `unbind_blocked_by_org_policy` / ROPC 拒签行为 / 三个部署单元都需要 `ULP_MFA_KEK` env
-- [ ] 9.3 `CLAUDE.md` "Configuration that's easy to get wrong" 段加：`MfaAwareAuthenticationSuccessHandler` 必须显式装配到 `ConsoleSecurityConfiguration` 与 `PortalSecurityConfiguration`（参照 Argon2id 那一段写法）；`OrgMfaEnforcementFilter` 仅装配到 `PortalSecurityConfiguration`（admin 不参与组织强制）
-- [ ] 9.4 三个 deployable 的 `application-example.yml`（如有）补 `ulp.mfa.key-encryption-key` 注释化示例 + 生成命令链接
-- [ ] 9.5 写 advisory: ROPC 客户端如果用 MFA 用户的密码 grant 会被拒（OpenAPI 集成方需迁移到 Auth Code Flow）
-- [ ] 9.6 跑 `openspec validate add-mfa-totp-second-factor`（如有），无错误
+- [x] 9.1 `README.md` 加 "MFA 部署前置" 段：KEK 生成命令（`openssl rand -base64 32` / PowerShell）+ K8s Secret 写入示例 + 团队密码管理器灾难恢复备份建议
+- [x] 9.2 `CLAUDE.md` 加 "MFA 第二因子" 段：KEK 配置要求 / 强制策略 = 组织级 `mfa_enforced` 位 + admin 自愿 / 多组织 OR 不沿父链 / 解绑被拒 403 `unbind_blocked_by_org_policy` / ROPC 拒签行为 / 三个部署单元都需要 `ULP_MFA_KEK` env / 备份码一次性返回 / admin reset 三字段一起清
+- [x] 9.3 `CLAUDE.md` "Configuration that's easy to get wrong" 段加：`MfaAwareAuthenticationSuccessHandler` 必须显式装配到 `ConsoleSecurityConfiguration` 与 `PortalSecurityConfiguration`（参照 Argon2id 那一段写法）；`OrgMfaEnforcementFilter` 仅装配到 `PortalSecurityConfiguration`（admin 不参与组织强制）
+- [x] 9.4 三个 deployable 的 `application.yml`（无 `application-example.yml`）在 Phase 1.15 已经写入 `ulp.mfa.key-encryption-key: ${ULP_MFA_KEK:}` + 详尽注释（生成命令、启动失败语义），无须额外动作
+- [x] 9.5 ROPC 拒签 advisory：CLAUDE.md "MFA 第二因子" 段含开发侧条目 + README "MFA 部署前置" 段加面向 OpenAPI 集成方的 ⚠️ 块（400 invalid_grant + `mfa_required_use_authorization_code_flow` + 迁移到 Auth Code Flow 推荐 PKCE）
+- [x] 9.6 `openspec validate add-mfa-totp-second-factor` 通过（`Change 'add-mfa-totp-second-factor' is valid`，CLI v1.3.1）
 - [ ] 9.7 三个部署单元本地启动烟测：console:1898 / portal:1989 / openapi:1988 各启一遍，跑端到端流程，确保启动校验生效（删 KEK 启动失败 + 正常 KEK 启动成功）
 - [ ] 9.8 `git commit` + 推 feature 分支 + 开 PR；review 通过合并到 main 后跑 `/opsx:archive add-mfa-totp-second-factor`，spec promote 到 `openspec/specs/mfa/spec.md`（新）+ `security-baseline` / `observability` 合并 delta
 - [ ] 9.9 更新 `C:\Users\frankzhang\.claude\plans\ulp-post-rebrand-roadmap.md`：把 #87 从待办移到已完成

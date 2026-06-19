@@ -16,11 +16,12 @@
  */
 // noinspection DuplicatedCode
 
-import { Button, Drawer, Form, Input, InputNumber, Space, Spin } from 'antd';
+import { Button, Drawer, Form, Input, InputNumber, Space, Spin, Switch, message } from 'antd';
 import { UpdateOrganizationFormProps } from './data.d';
 import { useIntl } from '@@/exports';
 import { useAsyncEffect } from 'ahooks';
 import { getOrganization } from '@/services/account';
+import { setOrgMfaPolicy } from '@/services/mfa';
 import React, { useState } from 'react';
 import { omit } from 'lodash';
 import { useForm } from 'antd/es/form/Form';
@@ -41,9 +42,33 @@ export default (props: UpdateOrganizationFormProps<AccountAPI.UpdateOrganization
   const { visible, onCancel, onFinish, currentNode } = props;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [getOrganizationLoading, setGetOrganizationLoading] = useState(false);
+  const [mfaPolicyLoading, setMfaPolicyLoading] = useState(false);
   const intl = useIntl();
   const [form] = useForm();
   const { styles } = useStyle();
+
+  const onMfaEnforcedChange = async (checked: boolean) => {
+    if (!currentNode) return;
+    setMfaPolicyLoading(true);
+    try {
+      const { success, result, message: msg } = await setOrgMfaPolicy(currentNode, checked);
+      if (success && result) {
+        form.setFieldsValue({ mfaEnforced: result.mfaEnforced });
+        message.success(
+          intl.formatMessage({
+            id: result.mfaEnforced
+              ? 'pages.account.user_list.organization.form.mfa_enforced.enabled'
+              : 'pages.account.user_list.organization.form.mfa_enforced.disabled',
+          }),
+        );
+      } else {
+        form.setFieldsValue({ mfaEnforced: !checked });
+        message.error(msg || intl.formatMessage({ id: 'pages.mfa.challenge.unknown' }));
+      }
+    } finally {
+      setMfaPolicyLoading(false);
+    }
+  };
   useAsyncEffect(async () => {
     if (visible && currentNode) {
       setGetOrganizationLoading(true);
@@ -196,6 +221,18 @@ export default (props: UpdateOrganizationFormProps<AccountAPI.UpdateOrganization
             label={intl.formatMessage({ id: 'pages.account.user_list.organization.form.desc' })}
           >
             <Input.TextArea autoComplete="off" />
+          </ProForm.Item>
+          <ProForm.Item
+            name="mfaEnforced"
+            label={intl.formatMessage({
+              id: 'pages.account.user_list.organization.form.mfa_enforced',
+            })}
+            valuePropName="checked"
+            tooltip={intl.formatMessage({
+              id: 'pages.account.user_list.organization.form.mfa_enforced.tooltip',
+            })}
+          >
+            <Switch loading={mfaPolicyLoading} onChange={onMfaEnforcedChange} />
           </ProForm.Item>
         </Form>
       </Spin>

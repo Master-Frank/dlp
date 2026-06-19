@@ -22,6 +22,7 @@ import type { ItemType } from 'antd/es/menu/hooks/useItems';
 import { useLayoutEffect, useRef, useState } from 'react';
 import BaseView from './components/Base';
 import BindingView from './components/Bind';
+import MfaView from './components/MFA';
 import SecurityView from './components/Security';
 import { AccountSettingsStateKey } from './data.d';
 import classnames from 'classnames';
@@ -73,6 +74,12 @@ const AccountSettings = () => {
       }),
     },
     {
+      key: AccountSettingsStateKey.mfa,
+      label: intl.formatMessage({
+        id: 'page.account.menu.mfa',
+      }),
+    },
+    {
       key: AccountSettingsStateKey.bind,
       label: intl.formatMessage({
         id: 'page.account.menu.bind',
@@ -116,6 +123,8 @@ const AccountSettings = () => {
         return <BaseView />;
       case AccountSettingsStateKey.security:
         return <SecurityView />;
+      case AccountSettingsStateKey.mfa:
+        return <MfaView />;
       case AccountSettingsStateKey.bind:
         return <BindingView />;
       default:

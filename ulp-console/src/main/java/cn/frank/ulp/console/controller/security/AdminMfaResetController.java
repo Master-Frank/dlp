@@ -16,6 +16,10 @@
  */
 package cn.frank.ulp.console.controller.security;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,12 +27,18 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import cn.frank.ulp.audit.entity.Target;
+import cn.frank.ulp.audit.enums.EventStatus;
+import cn.frank.ulp.audit.enums.TargetType;
+import cn.frank.ulp.audit.event.AuditEventPublish;
+import cn.frank.ulp.audit.event.type.EventType;
 import cn.frank.ulp.common.entity.account.UserEntity;
 import cn.frank.ulp.common.entity.setting.AdministratorEntity;
 import cn.frank.ulp.common.repository.account.UserRepository;
 import cn.frank.ulp.common.repository.setting.AdministratorRepository;
 import cn.frank.ulp.support.exception.BadParamsException;
 import cn.frank.ulp.support.result.ApiRestResult;
+import cn.frank.ulp.support.security.util.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 
@@ -39,7 +49,9 @@ import lombok.RequiredArgsConstructor;
  * <p>两路径分别处理用户和管理员，便于审计区分（{@code target_user_type} 字段）。
  * 仅 ADMIN 角色可调用，前置 {@code @PreAuthorize} 拦截。
  *
- * <p>Phase 6.4 将补 {@code ADMIN_RESET_USER_MFA} 事件，并接 {@code AuditEventPublish}。
+ * <p>成功后发 {@link AccountEventType#ADMIN_RESET_USER_MFA} 审计，params 含
+ * {@code target_user_id / target_user_type / actor_admin_id}；target 列表挂上对应
+ * {@link TargetType#USER}/{@link TargetType#ADMINISTRATOR} 节点便于按目标维度筛选。
  */
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -48,6 +60,7 @@ public class AdminMfaResetController {
 
     private final UserRepository          userRepository;
     private final AdministratorRepository administratorRepository;
+    private final AuditEventPublish       auditEventPublish;
 
     @PostMapping("/users/{id}/reset-mfa")
     @Transactional(rollbackFor = Exception.class)
@@ -59,6 +72,7 @@ public class AdminMfaResetController {
         user.setTotpSecretCipher(null);
         user.setBackupCodesJson(null);
         userRepository.save(user);
+        publishReset(userId, user.getUsername(), "user", TargetType.USER);
         return ApiRestResult.ok(Boolean.TRUE);
     }
 
@@ -72,6 +86,20 @@ public class AdminMfaResetController {
         admin.setTotpSecretCipher(null);
         admin.setBackupCodesJson(null);
         administratorRepository.save(admin);
+        publishReset(adminId, admin.getUsername(), "admin", TargetType.ADMINISTRATOR);
         return ApiRestResult.ok(Boolean.TRUE);
+    }
+
+    private void publishReset(String targetId, String targetName, String targetUserType,
+                              TargetType targetType) {
+        String actorAdminId = SecurityUtils.getCurrentUserId();
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("target_user_id", targetId);
+        params.put("target_user_type", targetUserType);
+        params.put("actor_admin_id", actorAdminId);
+        Target target = Target.builder().id(targetId)
+            .name(targetName == null ? targetId : targetName).type(targetType).build();
+        auditEventPublish.publish(EventType.ADMIN_RESET_USER_MFA, params, "admin_reset_mfa",
+            List.of(target), null, EventStatus.SUCCESS, null);
     }
 }

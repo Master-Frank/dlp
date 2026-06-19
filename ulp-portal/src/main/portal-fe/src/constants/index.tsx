@@ -33,6 +33,8 @@ export enum IDP_TYPE {
 
 export enum SESSION_STATUS {
   require_bind_idp = 'require_bind_idp',
+  mfa_required = 'mfa_required',
+  mfa_setup_required = 'mfa_setup_required',
 }
 
 /**

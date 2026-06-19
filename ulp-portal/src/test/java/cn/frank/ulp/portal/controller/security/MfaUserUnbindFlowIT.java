@@ -18,9 +18,11 @@ package cn.frank.ulp.portal.controller.security;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -46,10 +48,7 @@ import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
 import cn.frank.ulp.support.security.mfa.MfaSecretGenerator;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
-
-import dev.samstevens.totp.code.DefaultCodeGenerator;
-import dev.samstevens.totp.code.HashingAlgorithm;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -73,7 +72,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>每个场景独立 seed user + 调用，事务回滚保证 SQL 隔离。
  */
 @ActiveProfiles("test")
-class MfaUserUnbindFlowIT extends AbstractIntegrationTest {
+class MfaUserUnbindFlowIT extends AbstractMfaIntegrationTest {
 
     private static final String          UNBIND_PATH   = "/api/v1/mfa/unbind";
 
@@ -98,15 +97,25 @@ class MfaUserUnbindFlowIT extends AbstractIntegrationTest {
     @Autowired
     private PasswordEncoder              passwordEncoder;
 
-    private final DefaultCodeGenerator   totpGenerator = new DefaultCodeGenerator(
-        HashingAlgorithm.SHA1);
+    /**
+     * 跟踪每个测试方法 seed 的 userId —— @AfterEach 用它清 Redis 三类 MFA key
+     * （pending / fail counter / bind secret），防止 test3 的 invalid-OTP 路径写入的
+     * {@code ULP_MFA_FAIL:user:{userId}} 泄漏给后续 IT。account / org / member 行靠
+     * 测试事务回滚清除，Redis 不在事务里所以必须显式清。
+     */
+    private final List<String>           seededUserIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanupMfaRedisKeys() {
+        seededUserIds.forEach(id -> cleanMfaRedisKeys("user", id));
+        seededUserIds.clear();
+    }
 
     @Test
     void userWithoutEnforcement_unbindsSuccessfully() throws Exception {
         SeededUser seeded = seedUserWithMfa("it-mfa-unbind-user-1");
 
-        long counter = System.currentTimeMillis() / 1000L / 30L;
-        String otp = totpGenerator.generate(seeded.secretBase32(), counter);
+        String otp = computeTotp(seeded.secretBase32());
 
         String body = "{\"currentOtp\":\"" + otp + "\"}";
         mockMvc
@@ -202,6 +211,7 @@ class MfaUserUnbindFlowIT extends AbstractIntegrationTest {
         user.setTotpSecretCipher(cipher);
         user.setBackupCodesJson(backupCodesJson);
         String userId = userRepository.saveAndFlush(user).getId();
+        seededUserIds.add(userId);
         return new SeededUser(userId, secretBase32, plaintextCodes);
     }
 

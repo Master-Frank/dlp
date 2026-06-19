@@ -91,17 +91,32 @@ public class MfaChallengeService {
     private final MfaSecretCipher               secretCipher;
     private final Map<String, MfaService>       servicesByType;
     private final SecurityContextRepository     securityContextRepository;
+    private final MfaBackupCodeService          backupCodeService;
 
+    /**
+     * Test-only / legacy constructor — Phase-3 wiring without the backup-code service. Real
+     * deployables MUST use the 6-arg constructor so the {@code backupCode} path resolves; the
+     * Phase-3 ITs that exercise OTP only still pass {@code null} via this overload.
+     */
     public MfaChallengeService(MfaPendingAuthenticationStore pendingStore,
                                MfaLockoutService lockoutService, MfaCodeVerifier codeVerifier,
                                MfaSecretCipher secretCipher, Collection<MfaService> services) {
-        this(pendingStore, lockoutService, codeVerifier, secretCipher, services,
+        this(pendingStore, lockoutService, codeVerifier, secretCipher, services, null,
             new HttpSessionSecurityContextRepository());
     }
 
     public MfaChallengeService(MfaPendingAuthenticationStore pendingStore,
                                MfaLockoutService lockoutService, MfaCodeVerifier codeVerifier,
                                MfaSecretCipher secretCipher, Collection<MfaService> services,
+                               MfaBackupCodeService backupCodeService) {
+        this(pendingStore, lockoutService, codeVerifier, secretCipher, services, backupCodeService,
+            new HttpSessionSecurityContextRepository());
+    }
+
+    public MfaChallengeService(MfaPendingAuthenticationStore pendingStore,
+                               MfaLockoutService lockoutService, MfaCodeVerifier codeVerifier,
+                               MfaSecretCipher secretCipher, Collection<MfaService> services,
+                               MfaBackupCodeService backupCodeService,
                                SecurityContextRepository securityContextRepository) {
         this.pendingStore = Objects.requireNonNull(pendingStore, "pendingStore");
         this.lockoutService = Objects.requireNonNull(lockoutService, "lockoutService");
@@ -109,6 +124,7 @@ public class MfaChallengeService {
         this.secretCipher = Objects.requireNonNull(secretCipher, "secretCipher");
         this.securityContextRepository = Objects.requireNonNull(securityContextRepository,
             "securityContextRepository");
+        this.backupCodeService = backupCodeService;
         Objects.requireNonNull(services, "services");
         this.servicesByType = services.stream()
             .collect(Collectors.toUnmodifiableMap(MfaService::subjectType, Function.identity()));
@@ -224,11 +240,135 @@ public class MfaChallengeService {
     }
 
     /**
+     * Backup-code sibling of {@link #verifyAndCommit}: walks the same lockout / IP / pending
+     * pipeline, but matches the submitted code against the hashed {@code backup_codes_json}
+     * list instead of recomputing TOTP. On success the matched entry is removed and the
+     * remaining count is returned to the caller so the controller can flag
+     * {@code regenerate_backup_codes_warning} (≤2) or {@code regenerate_backup_codes_required}
+     * (=0).
+     *
+     * <p>Lockout behaviour mirrors OTP: any non-matching code (including the case where the
+     * subject has zero codes left) increments the same {@code ULP_MFA_FAIL:{userType}:{userId}}
+     * counter — TOTP attempts and backup-code attempts SHARE the brute-force budget so a
+     * mixed retry pattern can't bypass the threshold.
+     *
+     * @return outcome + post-consume remaining count (always {@code 0} for non-SUCCESS).
+     *         Returns {@code (CHALLENGE_SESSION_INVALID, 0)} when the deployable forgot to
+     *         wire {@link MfaBackupCodeService} (the legacy 5-arg constructor path).
+     */
+    public BackupCodeChallengeResult verifyBackupCodeAndCommit(String challengeId,
+                                                               String backupCode,
+                                                               HttpServletRequest request,
+                                                               HttpServletResponse response) {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(response, "response");
+        if (backupCodeService == null) {
+            log.warn("Backup-code path invoked but MfaBackupCodeService is not wired — "
+                     + "treating as session-invalid. Check SecurityConfiguration bean wiring.");
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_SESSION_INVALID, 0);
+        }
+        if (challengeId == null || challengeId.isBlank() || backupCode == null
+            || backupCode.isBlank()) {
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_EXPIRED, 0);
+        }
+        Optional<MfaPendingEntry> entryOpt = pendingStore.peek(challengeId);
+        if (entryOpt.isEmpty()) {
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_EXPIRED, 0);
+        }
+        MfaPendingEntry entry = entryOpt.get();
+        Authentication pendingAuthentication = entry.getAuthentication();
+        if (pendingAuthentication == null
+            || !(pendingAuthentication.getPrincipal() instanceof UserDetails userDetails)) {
+            pendingStore.delete(challengeId);
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_SESSION_INVALID, 0);
+        }
+        UserType userType = userDetails.getUserType();
+        if (userType == null || userType.getType() == null || userDetails.getId() == null) {
+            pendingStore.delete(challengeId);
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_SESSION_INVALID, 0);
+        }
+        String userTypeKey = userType.getType();
+        String userId = userDetails.getId();
+
+        if (lockoutService.isLockedOut(userTypeKey, userId)) {
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.LOCKED_OUT, 0);
+        }
+
+        if (!sameIpv4Subnet(entry.getSourceIp(), request.getRemoteAddr())) {
+            pendingStore.delete(challengeId);
+            log.info("MFA backup-code challenge {} rejected: IP changed from {} to {}", challengeId,
+                entry.getSourceIp(), request.getRemoteAddr());
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_SESSION_INVALID, 0);
+        }
+
+        MfaService mfaService = servicesByType.get(userTypeKey);
+        if (mfaService == null) {
+            pendingStore.delete(challengeId);
+            log.warn(
+                "No MfaService bean registered for userType {} — invalidating backup challenge {}",
+                userTypeKey, challengeId);
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_SESSION_INVALID, 0);
+        }
+        if (mfaService.loadActiveCipher(userId) == null) {
+            pendingStore.delete(challengeId);
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.SUBJECT_NOT_BOUND, 0);
+        }
+
+        MfaBackupCodeService.BackupCodeConsumption consumption = backupCodeService
+            .consume(userTypeKey, userId, backupCode);
+        if (!consumption.consumed()) {
+            long count = lockoutService.recordFailure(userTypeKey, userId);
+            if (count >= lockoutService.threshold()) {
+                return new BackupCodeChallengeResult(MfaChallengeOutcome.LOCKED_OUT, 0);
+            }
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.INVALID_BACKUP_CODE, 0);
+        }
+
+        Optional<MfaPendingEntry> consumed = pendingStore.consume(challengeId);
+        if (consumed.isEmpty()) {
+            // Lost the race against TTL — the backup code was already removed from the
+            // subject's list (consume-once), so treat the resubmission as expired rather
+            // than rolling the encoded JSON back. Operator-impact is minimal: one code
+            // burned to discover an expired session.
+            return new BackupCodeChallengeResult(MfaChallengeOutcome.CHALLENGE_EXPIRED, 0);
+        }
+        commitAuthentication(consumed.get().getAuthentication(), request, response);
+        lockoutService.clear(userTypeKey, userId);
+        return new BackupCodeChallengeResult(MfaChallengeOutcome.SUCCESS, consumption.remaining());
+    }
+
+    /**
+     * Outcome wrapper for {@link #verifyBackupCodeAndCommit}: when {@code outcome == SUCCESS},
+     * {@code remaining} is the post-consume count of unused backup codes (0 → forced
+     * regenerate, ≤2 → warning).
+     */
+    public record BackupCodeChallengeResult(MfaChallengeOutcome outcome, int remaining) {
+    }
+
+    /**
      * Build the in-memory snapshot of {@code subjectType → MfaService} that the controller
      * tier can read for diagnostics. Exposes a defensive copy.
      */
     public Map<String, MfaService> registeredServices() {
         return new HashMap<>(servicesByType);
+    }
+
+    /**
+     * Peek the parked {@link Authentication} for a pending challenge without consuming the
+     * pending entry — used by the controller tier to build an {@link
+     * cn.frank.ulp.audit.entity.Actor} for failure-path audit events (e.g. {@code
+     * MFA_VERIFY_FAILURE}, {@code MFA_LOCKED_OUT}) where {@code SecurityContextHolder} is
+     * still empty because the second factor never committed.
+     *
+     * <p>Returns {@link Optional#empty()} when the entry has expired or the principal does
+     * not carry the {@link UserDetails} shape we need for actor attribution.
+     */
+    public Optional<Authentication> peekPendingAuthentication(String challengeId) {
+        if (challengeId == null || challengeId.isBlank()) {
+            return Optional.empty();
+        }
+        return pendingStore.peek(challengeId).map(MfaPendingEntry::getAuthentication)
+            .filter(Objects::nonNull).filter(auth -> auth.getPrincipal() instanceof UserDetails);
     }
 
     /**

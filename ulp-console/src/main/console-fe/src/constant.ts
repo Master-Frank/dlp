@@ -81,4 +81,6 @@ export enum ParamCheckType {
 
 export enum SESSION_STATUS {
   REQUIRE_RESET_PASSWORD = 'require_reset_password',
+  MFA_REQUIRED = 'mfa_required',
+  MFA_SETUP_REQUIRED = 'mfa_setup_required',
 }

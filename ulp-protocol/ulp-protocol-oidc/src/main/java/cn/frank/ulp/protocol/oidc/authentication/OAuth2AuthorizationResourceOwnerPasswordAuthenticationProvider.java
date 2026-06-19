@@ -57,6 +57,7 @@ import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 
 import cn.frank.ulp.support.security.authentication.WebAuthenticationDetails;
+import cn.frank.ulp.support.security.mfa.MfaStatusLookup;
 
 import jakarta.servlet.http.HttpServletRequest;
 import static cn.frank.ulp.protocol.oidc.authentication.OAuth2AuthenticationProviderUtils.getAuthenticatedClientElseThrowInvalidClient;
@@ -88,6 +89,12 @@ public final class OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvide
     private final OAuth2TokenGenerator<? extends OAuth2Token>                       tokenGenerator;
     private AuthenticationDetailsSource<HttpServletRequest, ?>                      authenticationDetailsSource       = new WebAuthenticationDetailsSource();
     private SessionRegistry                                                         sessionRegistry;
+    /**
+     * MFA 状态查询，可选注入；为 {@code null} 时跳过 MFA 拒绝逻辑（向下兼容旧部署 / 单测）。
+     * 非 {@code null} 且 {@link MfaStatusLookup#isMfaEnabled(String)} 返回 {@code true} 时，
+     * 主认证已经通过的请求会被改判 {@code invalid_grant}——避免已启用 MFA 的用户绕过第二因子。
+     */
+    private MfaStatusLookup                                                         mfaStatusLookup;
 
     /**
      * Constructs an {@code OAuth2authorizationPasswordAuthenticationProvider} using the provided parameters.
@@ -124,6 +131,21 @@ public final class OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvide
         if (userDetailsPasswordService != null) {
             setUserDetailsPasswordService(userDetailsPasswordService);
         }
+    }
+
+    /**
+     * 最完整的扩参构造：在 5 参基础上再注入 {@link MfaStatusLookup}。{@code null} 时退化等价于
+     * 5 参构造，方便老部署 / 单测继续走"不感知 MFA"的链路。
+     */
+    public OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvider(UserDetailsService userDetailsService,
+                                                                          OAuth2AuthorizationService authorizationService,
+                                                                          OAuth2TokenGenerator<? extends OAuth2Token> tokenGenerator,
+                                                                          PasswordEncoder passwordEncoder,
+                                                                          @Nullable UserDetailsPasswordService userDetailsPasswordService,
+                                                                          @Nullable MfaStatusLookup mfaStatusLookup) {
+        this(userDetailsService, authorizationService, tokenGenerator, passwordEncoder,
+            userDetailsPasswordService);
+        this.mfaStatusLookup = mfaStatusLookup;
     }
 
     public void setSessionRegistry(SessionRegistry sessionRegistry) {
@@ -164,6 +186,20 @@ public final class OAuth2AuthorizationResourceOwnerPasswordAuthenticationProvide
             }
             // Return the authorization request as-is where isAuthenticated() is false
             return authorizationPasswordAuthenticationToken;
+        }
+
+        // MFA gate — password grant has no path to collect a second factor, so any user with
+        // MFA enabled MUST be rejected here. Status lookup is optional: when absent (e.g. test
+        // wiring or a deployment that hasn't opted into MFA at all) the rejection is skipped.
+        if (this.mfaStatusLookup != null
+            && this.mfaStatusLookup.isMfaEnabled(principal.getName())) {
+            if (this.logger.isTraceEnabled()) {
+                this.logger.trace(
+                    "Rejected password grant because principal has MFA enabled");
+            }
+            OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.INVALID_GRANT,
+                "MFA is required for this user; password grant is not supported", ERROR_URI);
+            throw new OAuth2AuthenticationException(error);
         }
 
         Set<String> authorizedScopes = authorizationPasswordAuthenticationToken.getScopes();

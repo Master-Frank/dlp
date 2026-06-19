@@ -84,10 +84,13 @@ import cn.frank.ulp.support.geo.GeoLocationParser;
 import cn.frank.ulp.support.security.authentication.WebAuthenticationDetailsSource;
 import cn.frank.ulp.support.security.configurer.FormLoginConfigurer;
 import cn.frank.ulp.support.security.mfa.MfaAwareAuthenticationSuccessHandler;
+import cn.frank.ulp.support.security.mfa.MfaBackupCodeService;
+import cn.frank.ulp.support.security.mfa.MfaBackupCodeStore;
 import cn.frank.ulp.support.security.mfa.MfaChallengeService;
 import cn.frank.ulp.support.security.mfa.MfaCodeVerifier;
 import cn.frank.ulp.support.security.mfa.MfaDecision;
 import cn.frank.ulp.support.security.mfa.MfaLockoutService;
+import cn.frank.ulp.support.security.mfa.MfaMetrics;
 import cn.frank.ulp.support.security.mfa.MfaPendingAuthenticationStore;
 import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
 import cn.frank.ulp.support.security.mfa.MfaService;
@@ -95,6 +98,8 @@ import cn.frank.ulp.support.security.mfa.MfaTriggerStrategy;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
 import cn.frank.ulp.support.web.useragent.UserAgentParser;
+
+import io.micrometer.core.instrument.MeterRegistry;
 import static org.springframework.http.HttpMethod.*;
 import static org.springframework.security.config.Customizer.withDefaults;
 
@@ -607,9 +612,33 @@ public class PortalSecurityConfiguration extends AbstractSecurityConfiguration
                                                    MfaLockoutService mfaLockoutService,
                                                    MfaCodeVerifier codeVerifier,
                                                    MfaSecretCipher secretCipher,
-                                                   Collection<MfaService> mfaServices) {
+                                                   Collection<MfaService> mfaServices,
+                                                   MfaBackupCodeService mfaBackupCodeService) {
         return new MfaChallengeService(mfaPendingStore, mfaLockoutService, codeVerifier,
-            secretCipher, mfaServices);
+            secretCipher, mfaServices, mfaBackupCodeService);
+    }
+
+    /**
+     * Backup-code consume 引擎。{@link Collection} 注入会自动包含所有
+     * {@link MfaBackupCodeStore} bean —— portal 当前只有
+     * {@link cn.frank.ulp.portal.service.security.UserBackupCodeStore}，按 subject type 路由。
+     * {@link PasswordEncoder} 复用全局 {@code DelegatingPasswordEncoder}（默认 Argon2id）做
+     * 明文 → 已存储 hash 的恒定时间比较；与 bind confirm 用同一个 encoder 才能 matches。
+     */
+    @Bean
+    public MfaBackupCodeService mfaBackupCodeService(Collection<MfaBackupCodeStore> stores,
+                                                     PasswordEncoder passwordEncoder) {
+        return new MfaBackupCodeService(stores, passwordEncoder);
+    }
+
+    /**
+     * Micrometer wrapper for MFA counters + pending-gauge. Cached Redis SCAN (≥30s) keeps
+     * Prometheus scrape cost bounded; controllers / services pass the same bean for outcome
+     * tagging.
+     */
+    @Bean
+    public MfaMetrics mfaMetrics(MeterRegistry meterRegistry, StringRedisTemplate redisTemplate) {
+        return new MfaMetrics(meterRegistry, redisTemplate);
     }
 
     /**

@@ -101,5 +101,26 @@ export const requestConfig: RequestConfig = {
     (response) => {
       return response;
     },
+    // mfa_setup_required 全局拦截：组织强制 MFA 时，任何受保护接口（OrgMfaEnforcementFilter）
+    // 都会返回 403 + { error: 'mfa_setup_required', reason: 'org_policy' }，统一引导到绑定页。
+    (response: any) => {
+      try {
+        const data = response?.data;
+        if (
+          response?.status === 403 &&
+          data &&
+          (data.error === 'mfa_setup_required' || data.status === 'mfa_setup_required')
+        ) {
+          const path = history.location.pathname;
+          if (path !== '/mfa/setup' && path !== '/mfa/challenge') {
+            const search = stringify({ redirect_uri: '/api/v1/jump' });
+            window.location.replace(`/mfa/setup?${search}`);
+          }
+        }
+      } catch (e) {
+        // ignore guard failures
+      }
+      return response;
+    },
   ],
 };

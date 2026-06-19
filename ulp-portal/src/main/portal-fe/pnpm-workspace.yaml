@@ -1,0 +1,12 @@
+# Single-package workspace declaration.
+# - `packages:` is required by pnpm 9 (frontend-maven-plugin pins v9.15.1); without it,
+#   pnpm 9 errors "packages field missing or empty" when this file exists.
+# - `allowBuilds:` is the pnpm 11 mechanism (Frank's local shell) to suppress
+#   ERR_PNPM_IGNORED_BUILDS for native-build packages. pnpm 9 ignores unknown keys.
+packages:
+  - '.'
+allowBuilds:
+  core-js: true
+  core-js-pure: true
+  es5-ext: true
+  esbuild: true

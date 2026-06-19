@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -44,10 +43,8 @@ import cn.frank.ulp.support.security.mfa.MfaBackupCodeGenerator;
 import cn.frank.ulp.support.security.mfa.MfaPendingAuthenticationStore;
 import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
 import cn.frank.ulp.support.security.mfa.MfaSecretGenerator;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 
-import dev.samstevens.totp.code.DefaultCodeGenerator;
-import dev.samstevens.totp.code.HashingAlgorithm;
 import jakarta.servlet.http.Cookie;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -81,13 +78,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @ActiveProfiles("test")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
+class ConsoleMfaChallengeLoginIT extends AbstractMfaIntegrationTest {
 
     private static final String           LOGIN_PATH         = "/api/v1/login";
     private static final String           CHALLENGE_PATH     = "/api/v1/mfa/challenge";
     private static final String           PENDING_COOKIE     = "ulp-mfa-pending";
-    private static final String           FAIL_KEY_PREFIX    = "ULP_MFA_FAIL:admin:";
-    private static final String           PENDING_KEY_PREFIX = "ULP_MFA_PENDING:";
 
     @Autowired
     private AdministratorRepository       administratorRepository;
@@ -107,12 +102,6 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
     @Autowired
     private MfaPendingAuthenticationStore pendingStore;
 
-    @Autowired
-    private StringRedisTemplate           redisTemplate;
-
-    private final DefaultCodeGenerator    totpGenerator      = new DefaultCodeGenerator(
-        HashingAlgorithm.SHA1);
-
     private String                        seededAdminId;
     private String                        seededAdminUsername;
     /** with-MFA 场景 seed 时记录的 base32 secret，给后续 TOTP 计算用。 */
@@ -121,7 +110,7 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
     @AfterEach
     void cleanup() {
         if (seededAdminId != null) {
-            redisTemplate.delete(FAIL_KEY_PREFIX + seededAdminId);
+            cleanMfaRedisKeys("admin", seededAdminId);
             try {
                 administratorRepository.deleteById(seededAdminId);
             } catch (RuntimeException ignored) {
@@ -188,7 +177,7 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
             .isEqualTo(pending.getValue());
 
         // Redis pending 落地
-        assertThat(redisTemplate.hasKey(PENDING_KEY_PREFIX + pending.getValue()))
+        assertThat(redisTemplate.hasKey(pendingKey(pending.getValue())))
             .as("Redis pending 已写入").isTrue();
     }
 
@@ -213,8 +202,7 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
         String sourceIp = resolveStashedSourceIp(pending.getValue());
 
         // Step 2：本窗口正确 TOTP
-        long counter = System.currentTimeMillis() / 1000L / 30L;
-        String otp = totpGenerator.generate(seededAdminSecret, counter);
+        String otp = computeTotp(seededAdminSecret);
 
         // Step 3：提交挑战，应 200 ok 并清除 cookie
         mockMvc.perform(post(CHALLENGE_PATH).with(csrf()).cookie(pending).with(req -> {
@@ -225,7 +213,7 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
             .andExpect(cookie().maxAge(PENDING_COOKIE, 0));
 
         // Redis pending key 已被 GETDEL 原子消费
-        assertThat(redisTemplate.hasKey(PENDING_KEY_PREFIX + pending.getValue()))
+        assertThat(redisTemplate.hasKey(pendingKey(pending.getValue())))
             .as("成功后 Redis pending key 应被消费").isFalse();
     }
 
@@ -252,9 +240,7 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
         String sourceIp = resolveStashedSourceIp(pending.getValue());
 
         // 故意造一个错码：当前窗口正确 TOTP 加 1（仍是 6 位数字 / 进位即清零），保证不命中
-        long counter = System.currentTimeMillis() / 1000L / 30L;
-        String correctOtp = totpGenerator.generate(seededAdminSecret, counter);
-        String wrongOtp = nudgeOtp(correctOtp);
+        String wrongOtp = nudgeOtp(computeTotp(seededAdminSecret));
 
         // 前 4 次 → 401 invalid_otp，counter 累到 4
         for (int i = 1; i <= 4; i++) {
@@ -332,16 +318,5 @@ class ConsoleMfaChallengeLoginIT extends AbstractIntegrationTest {
     private String resolveStashedSourceIp(String challengeId) {
         return pendingStore.peek(challengeId).map(entry -> entry.getSourceIp()).orElseThrow(
             () -> new IllegalStateException("pending entry missing for challenge " + challengeId));
-    }
-
-    /**
-     * 把正确 OTP 的最后一位 +1 mod 10，构造一个保证不命中当前 30s 窗口的 6 位错码。
-     * 与正确码长度/字符集一致，避免 CustomLoginFilter / 控制器把"错码"误判为格式异常。
-     */
-    private static String nudgeOtp(String correctOtp) {
-        char[] chars = correctOtp.toCharArray();
-        int last = chars[chars.length - 1] - '0';
-        chars[chars.length - 1] = (char) ('0' + (last + 1) % 10);
-        return new String(chars);
     }
 }

@@ -18,11 +18,13 @@ package cn.frank.ulp.console.controller.security;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -45,7 +47,7 @@ import cn.frank.ulp.support.security.mfa.MfaSecretGenerator;
 import cn.frank.ulp.support.security.userdetails.Application;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -68,7 +70,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Admin 重置 <b>不</b> 验证目标的 OTP — 不需要构造 secret/OTP 对，直接 reset 即可。
  */
 @ActiveProfiles("test")
-class AdminMfaResetIT extends AbstractIntegrationTest {
+class AdminMfaResetIT extends AbstractMfaIntegrationTest {
 
     private static final String     USER_RESET_PATH  = "/api/v1/admin/users/";
     private static final String     ADMIN_RESET_PATH = "/api/v1/admin/administrators/";
@@ -90,6 +92,22 @@ class AdminMfaResetIT extends AbstractIntegrationTest {
 
     @Autowired
     private PasswordEncoder         passwordEncoder;
+
+    /**
+     * 跟踪 seed 的 user / admin id —— @AfterEach 用它们清 Redis 三类 MFA key
+     * （pending / fail counter / bind secret）。reset 端点本身只做 DB 清，不写 Redis；
+     * 加 defensive cleanup 满足 Phase 8.3 spec "每个 MFA IT 必须显式清 Redis"。
+     */
+    private final List<String>      seededUserIds  = new ArrayList<>();
+    private final List<String>      seededAdminIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanupMfaRedisKeys() {
+        seededUserIds.forEach(id -> cleanMfaRedisKeys("user", id));
+        seededAdminIds.forEach(id -> cleanMfaRedisKeys("admin", id));
+        seededUserIds.clear();
+        seededAdminIds.clear();
+    }
 
     @Test
     void adminResetsUser_clearsAllMfaFields() throws Exception {
@@ -165,7 +183,9 @@ class AdminMfaResetIT extends AbstractIntegrationTest {
         user.setMfaEnabled(Boolean.TRUE);
         user.setTotpSecretCipher(cipher);
         user.setBackupCodesJson(backupCodesJson);
-        return userRepository.saveAndFlush(user).getId();
+        String userId = userRepository.saveAndFlush(user).getId();
+        seededUserIds.add(userId);
+        return userId;
     }
 
     private String seedAdminWithMfa(String username) {
@@ -187,7 +207,9 @@ class AdminMfaResetIT extends AbstractIntegrationTest {
         admin.setMfaEnabled(Boolean.TRUE);
         admin.setTotpSecretCipher(cipher);
         admin.setBackupCodesJson(backupCodesJson);
-        return administratorRepository.saveAndFlush(admin).getId();
+        String adminId = administratorRepository.saveAndFlush(admin).getId();
+        seededAdminIds.add(adminId);
+        return adminId;
     }
 
     private String seedAdminWithoutMfa(String username) {
@@ -201,7 +223,9 @@ class AdminMfaResetIT extends AbstractIntegrationTest {
         admin.setNeedChangePassword(Boolean.FALSE);
         admin.setLastUpdatePasswordTime(LocalDateTime.now());
         admin.setMfaEnabled(Boolean.FALSE);
-        return administratorRepository.saveAndFlush(admin).getId();
+        String adminId = administratorRepository.saveAndFlush(admin).getId();
+        seededAdminIds.add(adminId);
+        return adminId;
     }
 
     private static UsernamePasswordAuthenticationToken mockAdminAuth(String adminId,

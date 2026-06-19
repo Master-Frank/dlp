@@ -30,6 +30,20 @@ export default [
     component: './SessionExpired',
   },
   {
+    layout: false,
+    hideInMenu: true,
+    name: 'mfa-setup',
+    path: '/mfa/setup',
+    component: './MFA/Setup',
+  },
+  {
+    layout: false,
+    hideInMenu: true,
+    name: 'mfa-challenge',
+    path: '/mfa/challenge',
+    component: './MFA/Challenge',
+  },
+  {
     path: '/',
     redirect: '/application',
   },

@@ -26,7 +26,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -45,10 +44,7 @@ import cn.frank.ulp.support.security.mfa.MfaSecretCipher;
 import cn.frank.ulp.support.security.userdetails.Application;
 import cn.frank.ulp.support.security.userdetails.UserDetails;
 import cn.frank.ulp.support.security.userdetails.UserType;
-import cn.frank.ulp.support.testsupport.AbstractIntegrationTest;
-
-import dev.samstevens.totp.code.DefaultCodeGenerator;
-import dev.samstevens.totp.code.HashingAlgorithm;
+import cn.frank.ulp.support.testsupport.AbstractMfaIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -64,25 +60,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code @AfterEach} 必须显式清理 {@code ULP_BIND_MFA_SECRET:admin:{adminId}}。
  */
 @ActiveProfiles("test")
-class MfaBindFlowIT extends AbstractIntegrationTest {
+class MfaBindFlowIT extends AbstractMfaIntegrationTest {
 
-    private static final String        PREPARE_PATH  = "/api/v1/mfa/bind/prepare";
-    private static final String        CONFIRM_PATH  = "/api/v1/mfa/bind/confirm";
-    private static final String        STAGING_KEY   = "ULP_BIND_MFA_SECRET:admin:";
-
-    @Autowired
-    private AdministratorRepository    administratorRepository;
+    private static final String     PREPARE_PATH = "/api/v1/mfa/bind/prepare";
+    private static final String     CONFIRM_PATH = "/api/v1/mfa/bind/confirm";
 
     @Autowired
-    private StringRedisTemplate        redisTemplate;
+    private AdministratorRepository administratorRepository;
 
     @Autowired
-    private MfaSecretCipher            mfaSecretCipher;
+    private MfaSecretCipher         mfaSecretCipher;
 
-    private String                     seededAdminId;
-    private String                     seededAdminUsername;
-    private final DefaultCodeGenerator totpGenerator = new DefaultCodeGenerator(
-        HashingAlgorithm.SHA1);
+    private String                  seededAdminId;
+    private String                  seededAdminUsername;
 
     @BeforeEach
     void seedAdmin() {
@@ -107,9 +97,7 @@ class MfaBindFlowIT extends AbstractIntegrationTest {
 
     @AfterEach
     void cleanRedis() {
-        if (seededAdminId != null) {
-            redisTemplate.delete(STAGING_KEY + seededAdminId);
-        }
+        cleanMfaRedisKeys("admin", seededAdminId);
     }
 
     @Test
@@ -132,12 +120,11 @@ class MfaBindFlowIT extends AbstractIntegrationTest {
         assertThat(otpAuthUri).as("otpAuthUri 含 secret 查询参数").contains("secret=" + secretBase32);
 
         // Redis 暂存可见
-        assertThat(redisTemplate.opsForValue().get(STAGING_KEY + seededAdminId))
+        assertThat(redisTemplate.opsForValue().get(bindStagingKey("admin", seededAdminId)))
             .as("Redis staging 写入").isEqualTo(secretBase32);
 
         // 2. 用 secret 算当前窗口 OTP
-        long counter = System.currentTimeMillis() / 1000L / 30L;
-        String otp = totpGenerator.generate(secretBase32, counter);
+        String otp = computeTotp(secretBase32);
 
         // 3. confirm：返回 10 个明文 backupCodes
         String confirmBody = "{\"otp\":\"" + otp + "\"}";
@@ -175,7 +162,7 @@ class MfaBindFlowIT extends AbstractIntegrationTest {
         assertThat(hashedInDb).as("DB 中不存明文备份码").noneMatch(backupCodes::contains);
 
         // Redis staging 应该被清除
-        assertThat(redisTemplate.opsForValue().get(STAGING_KEY + seededAdminId))
+        assertThat(redisTemplate.opsForValue().get(bindStagingKey("admin", seededAdminId)))
             .as("confirm 后 Redis staging 清除").isNull();
     }
 

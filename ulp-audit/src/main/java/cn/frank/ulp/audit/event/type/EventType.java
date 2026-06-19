@@ -172,6 +172,41 @@ public enum EventType {
                        PREPARE_BIND_MFA(PortalEventType.PREPARE_BIND_MFA),
 
                        /**
+                        * MFA 二次验证已要求
+                        */
+                       MFA_CHALLENGE_REQUIRED(PortalEventType.MFA_CHALLENGE_REQUIRED),
+
+                       /**
+                        * MFA 二次验证成功
+                        */
+                       MFA_VERIFY_SUCCESS(PortalEventType.MFA_VERIFY_SUCCESS),
+
+                       /**
+                        * MFA 二次验证失败
+                        */
+                       MFA_VERIFY_FAILURE(PortalEventType.MFA_VERIFY_FAILURE),
+
+                       /**
+                        * MFA 备份码已消费
+                        */
+                       BACKUP_CODE_USED(PortalEventType.BACKUP_CODE_USED),
+
+                       /**
+                        * MFA 锁定（连续失败触发）
+                        */
+                       MFA_LOCKED_OUT(PortalEventType.MFA_LOCKED_OUT),
+
+                       /**
+                        * 管理员重置 MFA
+                        */
+                       ADMIN_RESET_USER_MFA(AccountEventType.ADMIN_RESET_USER_MFA),
+
+                       /**
+                        * 组织强制 MFA 策略变更
+                        */
+                       ORG_MFA_POLICY_CHANGED(AccountEventType.ORG_MFA_POLICY_CHANGED),
+
+                       /**
                         * 创建用户组
                         */
                        CREATE_USER_GROUP(AccountEventType.CREATE_USER_GROUP),
